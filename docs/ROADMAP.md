@@ -29,7 +29,7 @@ Færdig når:
 - [x] Et large-kort genereres på under 3 sekunder
 - [x] Spillet kan åbnes på ejerens iPhone via GitHub Pages-linket
 
-## Milepæl 2 – Vejbyggeri og første lastbil ⬜
+## Milepæl 2 – Vejbyggeri og første bus 🟨 (venter på test på iPhone)
 **Mål:** Spilleren bygger en vej og ser et køretøj køre på den.
 
 Indhold:
@@ -37,12 +37,15 @@ Indhold:
 - Værktøjslinje med tilstandene Se, Vej og Nedrivning.
 - Træk-for-at-bygge vej med forhåndsvisning og pris (uden penge endnu). Fortryd.
 - Busstoppested, vejdepot og én bus, der kører mellem to stoppesteder med A*.
+- Byerne får et simpelt gadenet, som spilleren må bruge gratis.
+- Veje kan krydse floder på en lige bro ($1.000 pr. felt). Broer over søer kommer senere.
+- Busser kører gennem hinanden indtil milepæl 3 (kø og overhaling kommer der).
 
 Færdig når:
 - [ ] Vej kan bygges og rives ned med fingeren på iPhone
-- [ ] En bus kører frem og tilbage mellem to stoppesteder uden at køre forkert
-- [ ] Ruteplanlægningen er testet med forhindringer og manglende forbindelse
-- [ ] 60 fps med 100 busser på medium-kort
+- [x] En bus kører frem og tilbage mellem to stoppesteder uden at køre forkert (test)
+- [x] Ruteplanlægningen er testet med forhindringer og manglende forbindelse
+- [ ] 60 fps med 100 busser på medium-kort (simulationen er testet: 30 dage med 100 busser tager under 0,1 sek.; billedhastigheden skal ses på iPhone)
 
 ## Milepæl 3 – Økonomi og varekæder ⬜
 **Mål:** Penge tjenes og bruges, og alle fire varekæder fungerer på vej.
