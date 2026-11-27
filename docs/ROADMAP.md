@@ -11,7 +11,7 @@ Spil den seneste version: https://stilling-svg.github.io/transport-empire/
 
 ---
 
-## Milepæl 1 – Projektopsætning og kortgenerator 🟨 (venter på test på iPhone)
+## Milepæl 1 – Projektopsætning og kortgenerator ✅
 **Mål:** Et kort ud fra et seed, som kan ses og udforskes i browseren på iPhone.
 
 Indhold:
@@ -27,7 +27,7 @@ Færdig når:
 - [x] 1.000 seeds pr. kortstørrelse genereres uden fejl (test)
 - [x] Alle kort består valideringen i GDD 3.3 (test)
 - [x] Et large-kort genereres på under 3 sekunder
-- [ ] Spillet kan åbnes på ejerens iPhone via GitHub Pages-linket
+- [x] Spillet kan åbnes på ejerens iPhone via GitHub Pages-linket
 
 ## Milepæl 2 – Vejbyggeri og første lastbil ⬜
 **Mål:** Spilleren bygger en vej og ser et køretøj køre på den.
