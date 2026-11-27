@@ -1,0 +1,8 @@
+{
+  "coal_mine": { "name": "Coal Mine", "color": "0x3b3b3b", "produces": ["coal"], "accepts": [] },
+  "power_station": { "name": "Power Station", "color": "0xc9a227", "produces": [], "accepts": ["coal"] },
+  "farm": { "name": "Farm", "color": "0xd6b84a", "produces": ["grain"], "accepts": [] },
+  "food_factory": { "name": "Food Factory", "color": "0xc0504d", "produces": ["food"], "accepts": ["grain"] },
+  "forest": { "name": "Forest", "color": "0x2f6b2f", "produces": ["wood"], "accepts": [] },
+  "sawmill": { "name": "Sawmill", "color": "0x9c6b3f", "produces": ["planks"], "accepts": ["wood"] }
+}
