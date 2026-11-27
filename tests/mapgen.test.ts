@@ -12,6 +12,12 @@ import {
 import { validateMap } from '../src/mapgen/validate.ts';
 
 const SIZES: MapSize[] = ['small', 'medium', 'large'];
+
+/**
+ * Long synchronous loops block the test worker and make Vitest time out while
+ * reporting progress, so the long tests hand control back now and then.
+ */
+const breather = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 const settingsFor = (size: MapSize): MapSettings => ({
   size,
   water: 'medium',
@@ -70,8 +76,9 @@ describe('generateMap', () => {
   });
 
   for (const size of SIZES) {
-    it(`generates 1000 valid ${size} maps`, () => {
+    it(`generates 1000 valid ${size} maps`, async () => {
       for (let s = 0; s < 1000; s++) {
+        if (s % 10 === 0) await breather();
         const map = generateMap(`test-${s}`, settingsFor(size));
         const errors = validateMap(map);
         expect(errors, `seed test-${s}`).toEqual([]);
@@ -85,7 +92,7 @@ describe('generateMap', () => {
     });
   }
 
-  it('generates valid maps for every combination of settings', () => {
+  it('generates valid maps for every combination of settings', async () => {
     const waters: WaterAmount[] = ['low', 'medium', 'high'];
     const reliefs: Relief[] = ['flat', 'hilly', 'mountainous'];
     const towns: TownAmount[] = ['few', 'normal', 'many'];
@@ -94,6 +101,7 @@ describe('generateMap', () => {
         for (const relief of reliefs) {
           for (const town of towns) {
             const seeds = size === 'large' ? 2 : 5;
+            await breather();
             for (let s = 0; s < seeds; s++) {
               const map = generateMap(`combo-${s}`, { size, water, relief, towns: town });
               expect(validateMap(map)).toEqual([]);
