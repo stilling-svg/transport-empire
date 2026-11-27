@@ -1,36 +1,70 @@
 /**
- * Pan and zoom for the world container.
- * Touch: drag with one finger to pan, pinch with two to zoom.
- * Mouse: drag to pan, scroll wheel to zoom around the cursor.
+ * Pan and zoom for the world container, plus routing of pointer input.
+ *
+ * View mode:  one finger / mouse drag pans, a short tap inspects.
+ * Build mode: one finger / left mouse drives the active tool,
+ *             two fingers (or right mouse drag) pan, pinch zooms.
+ * The mouse wheel always zooms around the cursor.
  */
 import type { Container } from 'pixi.js';
 import type { ViewRect } from './mapRenderer.ts';
 
 export const MAX_ZOOM = 4;
 
+/** Receives single-pointer input while a build tool is active. Coordinates are screen pixels. */
+export interface PointerTool {
+  active(): boolean;
+  down(x: number, y: number): void;
+  move(x: number, y: number): void;
+  up(x: number, y: number): void;
+  cancel(): void;
+}
+
+type Mode = 'none' | 'pan' | 'tool' | 'pinch';
+type Pt = { x: number; y: number };
+
+const TAP_DISTANCE = 10;
+const TAP_TIME = 350;
+
 export class Camera {
   private zoom = 1;
   private minZoom = 0.1;
-  private readonly pointers = new Map<number, { x: number; y: number }>();
+  private readonly pointers = new Map<number, Pt>();
+  private mode: Mode = 'none';
   private pinchDistance = 0;
-  private pinchMid = { x: 0, y: 0 };
+  private pinchMid: Pt = { x: 0, y: 0 };
+  private downAt: Pt = { x: 0, y: 0 };
+  private downTime = 0;
+  private moved = false;
+  private readonly target: Container;
+  private readonly element: HTMLElement;
+  private readonly onChange: () => void;
+  tool: PointerTool | null = null;
+  onTap: ((x: number, y: number) => void) | null = null;
 
-  constructor(
-    private readonly target: Container,
-    private readonly element: HTMLElement,
-    private readonly onChange: () => void,
-  ) {
+  constructor(target: Container, element: HTMLElement, onChange: () => void) {
+    this.target = target;
+    this.element = element;
+    this.onChange = onChange;
     element.style.touchAction = 'none';
     element.addEventListener('pointerdown', this.onPointerDown);
     element.addEventListener('pointermove', this.onPointerMove);
     element.addEventListener('pointerup', this.onPointerUp);
-    element.addEventListener('pointercancel', this.onPointerUp);
-    element.addEventListener('pointerleave', this.onPointerUp);
+    element.addEventListener('pointercancel', this.onPointerCancel);
     element.addEventListener('wheel', this.onWheel, { passive: false });
+    element.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   get currentZoom(): number {
     return this.zoom;
+  }
+
+  /** Converts screen pixels (relative to the canvas) to world coordinates. */
+  toWorld(x: number, y: number): Pt {
+    return {
+      x: (x - this.target.position.x) / this.zoom,
+      y: (y - this.target.position.y) / this.zoom,
+    };
   }
 
   /** Zooms and centres so that the given world rectangle fits the screen. */
@@ -71,15 +105,32 @@ export class Camera {
     this.target.scale.set(next);
   }
 
-  private local(e: PointerEvent | WheelEvent): { x: number; y: number } {
+  private local(e: PointerEvent | WheelEvent): Pt {
     const r = this.element.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
   private onPointerDown = (e: PointerEvent): void => {
     this.element.setPointerCapture?.(e.pointerId);
-    this.pointers.set(e.pointerId, this.local(e));
-    if (this.pointers.size === 2) this.startPinch();
+    const p = this.local(e);
+    this.pointers.set(e.pointerId, p);
+
+    if (this.pointers.size === 1) {
+      this.downAt = p;
+      this.downTime = performance.now();
+      this.moved = false;
+      const mouseOk = e.pointerType !== 'mouse' || e.button === 0;
+      if (this.tool?.active() && mouseOk) {
+        this.mode = 'tool';
+        this.tool.down(p.x, p.y);
+      } else {
+        this.mode = 'pan';
+      }
+    } else if (this.pointers.size === 2) {
+      if (this.mode === 'tool') this.tool?.cancel();
+      this.mode = 'pinch';
+      this.startPinch();
+    }
   };
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -87,13 +138,16 @@ export class Camera {
     if (!prev) return;
     const now = this.local(e);
     this.pointers.set(e.pointerId, now);
+    if (Math.hypot(now.x - this.downAt.x, now.y - this.downAt.y) > TAP_DISTANCE) this.moved = true;
 
-    if (this.pointers.size === 1) {
+    if (this.mode === 'tool') {
+      this.tool?.move(now.x, now.y);
+    } else if (this.mode === 'pan') {
       const p = this.target.position;
       this.target.position.set(p.x + now.x - prev.x, p.y + now.y - prev.y);
       this.onChange();
-    } else if (this.pointers.size === 2) {
-      const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
+    } else if (this.mode === 'pinch' && this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()] as [Pt, Pt];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const p = this.target.position;
@@ -106,12 +160,34 @@ export class Camera {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    const p = this.pointers.get(e.pointerId) ?? this.local(e);
     this.pointers.delete(e.pointerId);
-    if (this.pointers.size === 2) this.startPinch();
+    if (this.mode === 'tool' && this.pointers.size === 0) {
+      this.tool?.up(p.x, p.y);
+    } else if (
+      this.mode === 'pan' &&
+      this.pointers.size === 0 &&
+      !this.moved &&
+      performance.now() - this.downTime < TAP_TIME
+    ) {
+      this.onTap?.(p.x, p.y);
+    }
+    if (this.pointers.size === 0) this.mode = 'none';
+    else if (this.pointers.size === 1 && this.mode === 'pinch') {
+      // One finger lifted after a pinch: keep panning with the other.
+      this.mode = 'pan';
+      this.moved = true;
+    }
+  };
+
+  private onPointerCancel = (e: PointerEvent): void => {
+    this.pointers.delete(e.pointerId);
+    if (this.mode === 'tool') this.tool?.cancel();
+    if (this.pointers.size === 0) this.mode = 'none';
   };
 
   private startPinch(): void {
-    const [a, b] = [...this.pointers.values()] as [{ x: number; y: number }, { x: number; y: number }];
+    const [a, b] = [...this.pointers.values()] as [Pt, Pt];
     this.pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
     this.pinchMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   }

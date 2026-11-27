@@ -36,3 +36,47 @@ export function tileHash(x: number, y: number): number {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return (h ^ (h >>> 16)) >>> 0;
 }
+
+/** Minimal drawing surface (a PixiJS Graphics satisfies this). */
+export interface PolyTarget {
+  poly(points: number[]): { fill(color: number | { color: number; alpha?: number }): unknown };
+}
+
+/** An isometric box standing on the ground point (cx, cy). */
+export function drawBlock(
+  g: PolyTarget,
+  cx: number,
+  cy: number,
+  halfW: number,
+  halfH: number,
+  tall: number,
+  wall: number,
+  roof: number,
+): void {
+  g.poly([cx - halfW, cy, cx, cy + halfH, cx, cy + halfH - tall, cx - halfW, cy - tall]).fill(shade(wall, 0.85));
+  g.poly([cx, cy + halfH, cx + halfW, cy, cx + halfW, cy - tall, cx, cy + halfH - tall]).fill(shade(wall, 0.7));
+  g.poly([
+    cx, cy - halfH - tall,
+    cx + halfW, cy - tall,
+    cx, cy + halfH - tall,
+    cx - halfW, cy - tall,
+  ]).fill(roof);
+}
+
+/** Inverse projection: the tile under a world point, honouring tile heights. -1 if none. */
+export function pickTile(
+  map: { width: number; height: number; maxHeight: number; heights: Uint8Array },
+  wx: number,
+  wy: number,
+): number {
+  const a = wx / (TILE_W / 2);
+  for (let h = map.maxHeight; h >= 0; h--) {
+    const b = (wy + h * HEIGHT_STEP) / (TILE_H / 2);
+    const tx = Math.floor((a + b) / 2);
+    const ty = Math.floor((b - a) / 2);
+    if (tx < 0 || ty < 0 || tx >= map.width || ty >= map.height) continue;
+    const i = ty * map.width + tx;
+    if (map.heights[i] === h) return i;
+  }
+  return -1;
+}

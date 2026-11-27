@@ -24,6 +24,15 @@ export const TREE_COLOR = 0x23552a;
 export const HOUSE_WALL = 0xd9cbb3;
 export const HOUSE_ROOF = 0xa5483a;
 export const BACKGROUND = 0x1d2b36;
+export const ROAD_COLOR = 0x5b5b5e;
+export const BRIDGE_COLOR = 0x8c7a62;
+export const STOP_COLOR = 0xe3b23c;
+export const DEPOT_COLOR = 0x4d6f9c;
+export const BUS_BODY = 0xe8a23a;
+export const BUS_ROOF = 0xf5e3b5;
+export const PREVIEW_OK = 0x4cd964;
+export const PREVIEW_BAD = 0xff3b30;
+export const HIGHLIGHT = 0xffe066;
 
 export function industryColor(type: IndustryType): number {
   return Number(industries[type].color);

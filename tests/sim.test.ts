@@ -292,3 +292,17 @@ describe('buses', () => {
     expect(w.buses.every((b) => b.arrivals > 0)).toBe(true);
   });
 });
+
+describe('drag paths', () => {
+  it('fills gaps and trims when dragging back', async () => {
+    const { extendPath } = await import('../src/ui/dragPath.ts');
+    const path: number[] = [];
+    extendPath(path, 0, 16);
+    extendPath(path, 3, 16); // jump: filled in as 0,1,2,3
+    expect(path).toEqual([0, 1, 2, 3]);
+    extendPath(path, 3 + 2 * 16, 16); // down two rows
+    expect(path).toEqual([0, 1, 2, 3, 19, 35]);
+    extendPath(path, 2, 16); // back onto the path trims it
+    expect(path).toEqual([0, 1, 2]);
+  });
+});
