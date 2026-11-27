@@ -1,0 +1,10 @@
+{
+  "roadPerTile": 100,
+  "bridgePerTile": 1000,
+  "forestClearing": 50,
+  "slopeMultiplier": 1.5,
+  "terrainMultiplier": { "grass": 1.0, "rough": 1.2, "farmland": 1.5, "forest": 1.0, "rock": 3.0 },
+  "busStop": 800,
+  "depot": 1000,
+  "maxRoadClimb": 1
+}

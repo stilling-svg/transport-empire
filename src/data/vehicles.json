@@ -1,0 +1,6 @@
+{
+  "kmhToTilesPerDay": 0.045,
+  "bus": { "name": "Rambler Bus", "speedKmh": 56, "capacity": 30, "price": 12000 },
+  "loadingDays": 2,
+  "lostRetryDays": 5
+}
