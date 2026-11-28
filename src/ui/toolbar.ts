@@ -14,8 +14,8 @@ const TOOLS: Array<{ id: Tool; label: string; icon: string }> = [
 const HINTS: Record<Tool, string> = {
   view: 'Drag to move · pinch to zoom · twist or ⟲ ⟳ to rotate · tap to inspect',
   road: 'Drag along the tiles to build a road · two fingers to move',
-  busstop: 'Bus stop for passengers and mail · tap a straight piece of road',
-  truckstop: 'Loading bay for freight · tap a straight piece of road near an industry or town',
+  busstop: 'Bus stop for passengers and mail · tap a straight road or the end of a road',
+  truckstop: 'Loading bay for freight · tap a straight road or a road end near an industry or town',
   depot: 'Tap an empty tile next to a road to build a depot',
   demolish: 'Drag over your roads, stops or depots to remove them',
 };

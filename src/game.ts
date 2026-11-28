@@ -758,8 +758,8 @@ export class Game {
     const fresh = w.newsCount - this.seenNews;
     this.seenNews = w.newsCount;
     this.unreadNews += fresh;
-    const latest = w.news[w.news.length - 1];
-    if (latest) this.hud.showHeadline(latest.text, latest.kind);
+    const headline = [...w.news].reverse().find((n) => !n.quiet);
+    if (headline) this.hud.showHeadline(headline.text, headline.kind);
     this.hud.setUnread(this.unreadNews);
     if (this.shownVehicle >= 0 && this.panelRefresh) this.panelRefresh();
   }
@@ -767,7 +767,7 @@ export class Game {
   private showNews(): void {
     this.unreadNews = 0;
     this.hud.setUnread(0);
-    const items = this.world.news.slice(-12).reverse();
+    const items = this.world.news.filter((n) => !n.quiet).slice(-8).reverse();
     const icon = { good: '🟢', bad: '🔴', info: '🔵' } as const;
     this.selectTool('view');
     this.showPanel({
@@ -777,7 +777,7 @@ export class Game {
         : ['Nothing has happened yet.'],
       actions: items
         .filter((n) => n.tile !== undefined)
-        .slice(0, 4)
+        .slice(0, 3)
         .map((n) => ({
           label: `Show: ${n.text.length > 28 ? `${n.text.slice(0, 27)}…` : n.text}`,
           onClick: () => this.jumpTo(n.tile!),

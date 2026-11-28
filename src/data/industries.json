@@ -19,7 +19,7 @@
   },
   "farm": {
     "name": "Farm",
-    "color": "0xd6b84a",
+    "color": "0xa0522d",
     "produces": [
       "grain"
     ],

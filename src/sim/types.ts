@@ -107,6 +107,8 @@ export interface NewsItem {
   kind: NewsKind;
   /** Tile to jump to when the player taps the news, if any. */
   tile?: number;
+  /** Small news: kept in the archive but not shown as a headline. */
+  quiet?: boolean;
 }
 
 /** Temporary world-wide effects from economic events. */

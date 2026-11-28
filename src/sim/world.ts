@@ -63,6 +63,8 @@ export class World {
   newsCount = 0;
   /** Set when industries open or close, so labels are rebuilt. */
   labelsDirty = false;
+  /** Day of the last closure warning, so closures are spread out. */
+  lastClosureWarningDay = -1e9;
   readonly initialIndustryCount: number;
   tick = 0;
   /** Tiles whose look changed since the renderer last looked. */
@@ -146,9 +148,9 @@ export class World {
     monthlyEvents(this);
   }
 
-  addNews(text: string, kind: NewsKind, tile?: number): void {
-    this.news.push({ day: Math.floor(this.day), text, kind, tile });
-    this.newsCount++;
+  addNews(text: string, kind: NewsKind, tile?: number, quiet = false): void {
+    this.news.push({ day: Math.floor(this.day), text, kind, tile, quiet });
+    if (!quiet) this.newsCount++;
     if (this.news.length > events.maxNews) this.news.shift();
   }
 
@@ -273,8 +275,10 @@ export class World {
       return { ok: false, cost: 0, reason: 'Stops must be placed on a road' };
     }
     if (this.map.water[i] !== WaterKind.None) return { ok: false, cost: 0, reason: 'Not on a bridge' };
-    if (!isStraightRoad(this.roads[i]!)) {
-      return { ok: false, cost: 0, reason: 'Stops need a straight piece of road' };
+    const bits = this.roads[i]!;
+    const deadEnd = bits !== 0 && (bits & (bits - 1)) === 0;
+    if (!isStraightRoad(bits) && !deadEnd) {
+      return { ok: false, cost: 0, reason: 'Stops go on a straight piece of road or at the end of a road' };
     }
     const cost = kind === 'bus' ? costs.busStop : costs.truckStop;
     if (!this.finance.canAfford(cost)) return { ok: false, cost, reason: NOT_ENOUGH_MONEY };

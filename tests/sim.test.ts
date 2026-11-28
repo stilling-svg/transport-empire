@@ -142,6 +142,36 @@ describe('stops and depots', () => {
     expect(w.placeStop(9 * 16 + 9).ok).toBe(false); // no road
   });
 
+  it('places stops at the end of a road too, but not on corners', () => {
+    const w = new World(flatMap());
+    w.buildRoad(row(w.map, 5, 2, 6));
+    w.buildRoad(col(w.map, 6, 5, 8)); // corner at (6,5)
+    expect(w.placeStop(5 * 16 + 2).ok).toBe(true); // dead end
+    expect(w.placeStop(8 * 16 + 6).ok).toBe(true); // other dead end
+    expect(w.placeStop(5 * 16 + 6).ok).toBe(false); // corner
+  });
+
+  it('lets a bus shuttle between stops at two road ends', () => {
+    const w = new World(flatMap());
+    w.buildRoad(row(w.map, 5, 2, 12));
+    w.placeStop(5 * 16 + 2);
+    w.placeStop(5 * 16 + 12);
+    w.placeDepot(6 * 16 + 7);
+    const bus = w.buyBus(0)!;
+    w.setRoute(bus.id, [0, 1]);
+    runDays(w, 40);
+    expect(bus.arrivals).toBeGreaterThanOrEqual(4);
+  });
+
+  it('builds roads across farmland', () => {
+    const map = flatMap();
+    for (let x = 0; x < 16; x++) map.terrain[5 * 16 + x] = Terrain.Farmland;
+    const w = new World(map);
+    const res = w.buildRoad(row(map, 5, 2, 8));
+    expect(res.ok).toBe(true);
+    expect(res.cost).toBe(7 * 150);
+  });
+
   it('connects a depot to the neighbouring road', () => {
     const w = new World(flatMap());
     w.buildRoad(row(w.map, 5, 2, 6));

@@ -29,8 +29,8 @@ export function vehicleAgeYears(world: World, v: Vehicle): number {
   return (world.day - v.builtDay) / 365;
 }
 
-function news(world: World, text: string, kind: NewsKind, tile?: number): void {
-  world.addNews(text, kind, tile);
+function news(world: World, text: string, kind: NewsKind, tile?: number, quiet = false): void {
+  world.addNews(text, kind, tile, quiet);
 }
 
 /** "Coldholt Coal Mine": the type plus the nearest town, so news is unambiguous. */
@@ -65,7 +65,8 @@ export function dailyVehicleEvents(world: World): void {
     if (world.eventRng.next() < risk) {
       v.brokenTicks = world.eventRng.int(R.breakdownDaysMin, R.breakdownDaysMax) * TICKS_PER_DAY;
       v.breakdowns++;
-      news(world, `${v.name} has broken down`, 'bad', v.tile);
+      // The red warning sign on the vehicle is enough; no headline.
+      news(world, `${v.name} has broken down`, 'bad', v.tile, true);
     }
   }
 }
@@ -108,13 +109,13 @@ function industryMonth(world: World, grace: boolean): void {
         s.strikeWarned = false;
         news(world, `Workers at ${industryName(world, id)} have gone on strike`, 'bad', industryTile(world, id));
       } else if (--s.strikeMonths === 0) {
-        news(world, `The strike at ${industryName(world, id)} is over`, 'good', industryTile(world, id));
+        news(world, `The strike at ${industryName(world, id)} is over`, 'good', industryTile(world, id), true);
       }
       return; // a strike month says nothing about the service
     }
     if (s.boostMonths > 0 && --s.boostMonths === 0) {
       s.boost = 1;
-      news(world, `${industryName(world, id)}: the extra production has ended`, 'info', industryTile(world, id));
+      news(world, `${industryName(world, id)}: the extra production has ended`, 'info', industryTile(world, id), true);
     }
 
     const served = s.transportedLastMonth > 0;
@@ -153,9 +154,11 @@ function industryMonth(world: World, grace: boolean): void {
       !grace &&
       s.unservedMonths >= I.closeAfterUnservedMonths &&
       !isLastOfKind(world, ind.type) &&
+      world.day - world.lastClosureWarningDay >= I.minDaysBetweenClosures &&
       rng.next() < I.closeChancePerMonth
     ) {
       s.closingIn = I.closeWarningMonths;
+      world.lastClosureWarningDay = world.day;
       news(
         world,
         `${industryName(world, id)} announces it will close in ${I.closeWarningMonths} months unless it gets customers`,

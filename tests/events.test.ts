@@ -119,7 +119,7 @@ describe('living industries', () => {
     afterGrace(w);
     w.eventRng.next = () => 0; // every roll comes up "yes"
     const mine = 2; // the extra mine nobody serves
-    w.industryStats[mine]!.unservedMonths = 30;
+    w.industryStats[mine]!.unservedMonths = 40;
     let warnedDay = -1;
     let closedDay = -1;
     for (let d = 0; d < 200 && closedDay < 0; d++) {
@@ -139,7 +139,7 @@ describe('living industries', () => {
     afterGrace(w);
     w.eventRng.next = () => 0;
     const mine = 2;
-    w.industryStats[mine]!.unservedMonths = 30;
+    w.industryStats[mine]!.unservedMonths = 40;
     while (w.industryStats[mine]!.closingIn === 0) runDays(w, 1);
     // Something gets transported this month.
     w.industryStats[mine]!.transportedThisMonth = 10;
@@ -157,7 +157,7 @@ describe('living industries', () => {
     const w = line(false);
     afterGrace(w);
     w.eventRng.next = () => 0;
-    w.industryStats[1]!.unservedMonths = 30; // the only power station
+    w.industryStats[1]!.unservedMonths = 40; // the only power station
     runDays(w, 400);
     expect(w.industryStats[1]!.closed).toBe(false);
   });
@@ -166,7 +166,7 @@ describe('living industries', () => {
     const map = generateMap('new-industries', { size: 'medium', water: 'medium', relief: 'hilly', towns: 'normal' });
     const w = new World(map);
     const before = map.industries.length;
-    runDays(w, 365 * 4);
+    runDays(w, 365 * 8);
     expect(map.industries.length).toBeGreaterThan(before);
     expect(w.news.some((n) => n.text.startsWith('A new'))).toBe(true);
   });

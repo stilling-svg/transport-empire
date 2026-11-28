@@ -118,7 +118,7 @@ Byer bygger nye huse og veje automatisk. De river aldrig spillerens anlæg ned.
 | Vej | $100 | Byernes egne veje må bruges gratis |
 | Jernbane | $200 | Lige stykker og diagonaler |
 | Bro (vej/bane) | $1.000 | Spænder over vand eller dale, maks. 10 felter |
-| Busstoppested / læsseplads | $800 | Opland 3 felter |
+| Busstoppested / læsseplads | $800 | Opland 3 felter; på lige vej eller for enden af en vej |
 | Banegård | $1.500 pr. perronfelt | Opland 4 felter, 2–6 felter lang |
 | Depot (vej/tog) | $1.000 | Her købes og vedligeholdes køretøjer; maks. 8 køretøjer pr. depot |
 
@@ -269,12 +269,14 @@ Formålet er spændende beslutninger, ikke straf. Tre regler:
 
 Alt styres af en seedet RNG, så samme seed og samme handlinger giver samme forløb.
 Tal ligger i `src/data/events.json`. Hændelser vises i en nyhedslinje og et
-nyhedsarkiv (📰), hvorfra man kan hoppe til stedet på kortet.
+nyhedsarkiv (📰), hvorfra man kan hoppe til stedet på kortet. Små nyheder (nedbrud,
+slut på strejke/boom) vises ikke som overskrift. Målt på 3 kort giver det ca. 3–4
+overskrifter om året (ca. hvert 2. minut ved 1x).
 
 ### 12.1 Nedbrud og service
 - Pålidelighed starter på 100 % og falder 0,35 %-point om dagen (dobbelt så hurtigt
   efter 25 år), ned til 20 %.
-- Risiko for nedbrud pr. dag = (1 − pålidelighed)² × 8 %. Et nedbrud stopper
+- Risiko for nedbrud pr. dag = (1 − pålidelighed)² × 4 %. Et nedbrud stopper
   køretøjet 2–4 dage på vejen, og køretøjer bag det holder i kø.
 - Hver 120. dag kører køretøjet selv til sit depot til service (1 dag), og
   pålideligheden bliver 100 % igen (85 % for køretøjer over 25 år).
@@ -282,15 +284,15 @@ nyhedsarkiv (📰), hvorfra man kan hoppe til stedet på kortet.
 - Hvert depot har plads til 8 køretøjer. Et depot med køretøjer kan ikke rives ned.
 
 ### 12.2 Industrier lever
-- Produktion stiger (×1,25, op til 4× start) ved god betjening og falder (×0,8, ned
+- Produktion kan stige (12 % chance pr. måned, ×1,25, op til 4× start) ved god betjening og falder (×0,8, ned
   til ¼) ved dårlig betjening. Ubetjente industrier får lov at være i fred.
-- En industri, der har været helt ubetjent i 24 måneder, kan (2 % pr. måned)
-  varsle lukning om 3 måneder. Begynder spilleren at betjene den, aflyses lukningen.
+- En industri, der har været helt ubetjent i 36 måneder, kan (1,5 % pr. måned)
+  varsle lukning om 3 måneder. Der går mindst 8 måneder mellem to varsler. Begynder spilleren at betjene den, aflyses lukningen.
   Den sidste industri af en slags lukker aldrig.
-- Nye industrier åbner (ca. 7 % chance pr. måned, mere hvis der er færre end ved
+- Nye industrier åbner (ca. 4 % chance pr. måned, mere hvis der er færre end ved
   start) på ledige pladser på kortet.
 
-### 12.3 Korte begivenheder (ca. 30 % chance pr. måned)
+### 12.3 Korte begivenheder (ca. 12 % chance pr. måned)
 | Begivenhed | Virkning | Varighed |
 | --- | --- | --- |
 | Fund / rekordhøst / fint tømmer | Dobbelt produktion, oftest hos en betjent industri | 3–6 mdr. |
