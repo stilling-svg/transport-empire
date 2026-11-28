@@ -8,6 +8,7 @@ import vehicleData from '../data/vehicles.json' with { type: 'json' };
 import type { CargoId } from './cargo.ts';
 import { TICKS_PER_DAY, dirBetween } from './constants.ts';
 import { loadMore, unloadAndLoad } from './economy.ts';
+import { SERVICE_TICKS, needsService, servicedReliability } from './events.ts';
 import { findRoadPath } from './pathfinding.ts';
 import type { ModelId, Vehicle } from './types.ts';
 import type { World } from './world.ts';
@@ -45,9 +46,27 @@ function targetStop(world: World, v: Vehicle) {
   return order ? world.stops.get(order.stopId) : undefined;
 }
 
-/** Plans a path to the stop the vehicle is heading for. */
+/** Plans a path to the stop (or depot) the vehicle is heading for. */
 export function planToTarget(world: World, v: Vehicle): void {
   v.orders = v.orders.filter((o) => world.stops.has(o.stopId));
+  if (v.goingToDepot) {
+    const depot = world.depots.get(v.depotId);
+    const path = depot
+      ? findRoadPath(world.roads, world.map.width, world.map.height, v.tile, depot.tile)
+      : null;
+    if (depot && path) {
+      v.path = path;
+      v.pathIndex = 0;
+      v.progress = 0;
+      if (path.length === 1) enterDepot(v);
+      else v.state = 'driving';
+      return;
+    }
+    // Depot gone or unreachable: skip this service and try again later.
+    v.goingToDepot = false;
+    v.serviceRequested = false;
+    v.lastServiceDay = world.day;
+  }
   if (v.orders.length < 2) {
     v.state = 'idle';
     v.path = [v.tile];
@@ -91,7 +110,26 @@ function arrive(world: World, v: Vehicle): void {
 function depart(world: World, v: Vehicle): void {
   v.loadingAt = -1;
   v.orderIndex = (v.orderIndex + 1) % Math.max(1, v.orders.length);
+  if (needsService(world, v)) v.goingToDepot = true;
   planToTarget(world, v);
+}
+
+function enterDepot(v: Vehicle): void {
+  v.state = 'servicing';
+  v.waitTicks = SERVICE_TICKS;
+  v.progress = 0;
+  v.loadingAt = -1;
+}
+
+/** Sends a vehicle to its depot for service as soon as possible. */
+export function sendForService(world: World, v: Vehicle): boolean {
+  if (!world.depots.has(v.depotId)) return false;
+  v.serviceRequested = true;
+  if (v.state === 'driving' || v.state === 'lost') {
+    v.goingToDepot = true;
+    planToTarget(world, v);
+  }
+  return true;
 }
 
 /** A vehicle in a lane: its progress along the edge and its id (to break ties). */
@@ -162,7 +200,19 @@ export function updateVehicle(world: World, v: Vehicle, occ: Occupancy): void {
     case 'lost':
       if (--v.waitTicks <= 0) planToTarget(world, v);
       return;
+    case 'servicing':
+      if (--v.waitTicks > 0) return;
+      v.reliability = servicedReliability(world, v);
+      v.lastServiceDay = world.day;
+      v.goingToDepot = false;
+      v.serviceRequested = false;
+      planToTarget(world, v);
+      return;
     case 'driving': {
+      if (v.brokenTicks > 0) {
+        v.brokenTicks--; // standing still; vehicles behind have to wait
+        return;
+      }
       const next = v.path[v.pathIndex + 1];
       if (next === undefined || !linked(world, v.tile, next)) {
         planToTarget(world, v);
@@ -171,7 +221,7 @@ export function updateVehicle(world: World, v: Vehicle, occ: Occupancy): void {
       let step = tilesPerDay(v.model) / TICKS_PER_DAY;
       step = Math.min(step, roomAhead(world, occ, v));
       // Wait in front of a full stop.
-      const stop = targetStop(world, v);
+      const stop = v.goingToDepot ? undefined : targetStop(world, v);
       const lastEdge = v.pathIndex === v.path.length - 2;
       if (stop && lastEdge && world.loadersAt(stop.id) >= economy.maxLoadersPerStop) {
         step = Math.min(step, 1 - VEHICLE_GAP - v.progress);
@@ -183,7 +233,8 @@ export function updateVehicle(world: World, v: Vehicle, occ: Occupancy): void {
         v.pathIndex++;
         v.tile = v.path[v.pathIndex]!;
         if (v.pathIndex >= v.path.length - 1) {
-          arrive(world, v);
+          if (v.goingToDepot) enterDepot(v);
+          else arrive(world, v);
           return;
         }
         const after = v.path[v.pathIndex + 1]!;

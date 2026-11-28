@@ -48,13 +48,20 @@ export function computeCatchment(map: GameMap, tile: number): { industries: numb
 export function stopAccepts(world: World, stop: Stop, cargo: CargoId): boolean {
   if (cargoInfo(cargo).stop !== stop.kind) return false;
   if (TOWN_ACCEPTS.includes(cargo) && stop.towns.length > 0) return true;
-  return stop.industries.some((id) => industryInfo(world.map.industries[id]!.type).accepts.includes(cargo));
+  return stop.industries.some(
+    (id) => !isClosed(world, id) && industryInfo(world.map.industries[id]!.type).accepts.includes(cargo),
+  );
+}
+
+export function isClosed(world: World, industryId: number): boolean {
+  return world.industryStats[industryId]?.closed ?? true;
 }
 
 /** Cargo types that can be picked up at a stop (from industries/towns around it). */
 export function stopSupplies(world: World, stop: Stop): CargoId[] {
   const out = new Set<CargoId>();
   for (const id of stop.industries) {
+    if (isClosed(world, id)) continue;
     for (const c of industryInfo(world.map.industries[id]!.type).produces) out.add(c);
   }
   if (stop.towns.length > 0) {
@@ -116,13 +123,18 @@ export function produceDaily(world: World): void {
   map.industries.forEach((ind, id) => {
     const info = industryInfo(ind.type);
     const stats = world.industryStats[id]!;
+    if (stats.closed) return;
+    const striking = stats.strikeMonths > 0 && !stats.strikeWarned;
     let made = 0;
-    if (info.accepts.length > 0) {
+    if (striking) {
+      made = 0; // nothing is made during a strike; deliveries pile up
+    } else if (info.accepts.length > 0) {
       // Processing industries turn delivered input into output 1:1.
       made = stats.stock;
       stats.stock = 0;
     } else {
-      stats.carry += info.productionPerMonth / DAYS_PER_MONTH;
+      const boost = stats.boostMonths > 0 ? stats.boost : 1;
+      stats.carry += (stats.production * boost) / DAYS_PER_MONTH;
       made = Math.floor(stats.carry);
       stats.carry -= made;
     }
@@ -135,7 +147,8 @@ export function produceDaily(world: World): void {
 
   map.towns.forEach((town, id) => {
     const carry = world.townCarry[id]!;
-    carry.passengers += (town.population * economy.townPassengersPerPopulation) / DAYS_PER_MONTH;
+    const festival = world.modifiers.festivals.has(id) ? world.festivalMultiplier : 1;
+    carry.passengers += (town.population * economy.townPassengersPerPopulation * festival) / DAYS_PER_MONTH;
     carry.mail += (town.population * economy.townMailPerPopulation) / DAYS_PER_MONTH;
     for (const cargo of ['passengers', 'mail'] as const) {
       const made = Math.floor(carry[cargo]);
@@ -145,7 +158,7 @@ export function produceDaily(world: World): void {
   });
 }
 
-export function newIndustryStats(): IndustryStats {
+export function newIndustryStats(production: number): IndustryStats {
   return {
     stock: 0,
     carry: 0,
@@ -153,6 +166,14 @@ export function newIndustryStats(): IndustryStats {
     transportedThisMonth: 0,
     producedLastMonth: 0,
     transportedLastMonth: 0,
+    production,
+    unservedMonths: 0,
+    closingIn: 0,
+    closed: false,
+    boost: 1,
+    boostMonths: 0,
+    strikeMonths: 0,
+    strikeWarned: false,
   };
 }
 
@@ -170,12 +191,12 @@ export function unloadAndLoad(world: World, v: Vehicle, stop: Stop): number {
     const ty = (stop.tile - tx) / w;
     const distance = Math.abs(fx - tx) + Math.abs(fy - ty);
     const days = (world.tick - v.loadTick) / TICKS_PER_DAY;
-    paid = deliveryPayment(v.cargo, v.load, distance, days);
+    paid = Math.round(deliveryPayment(v.cargo, v.load, distance, days) * world.modifiers.payment);
     world.finance.earn(paid);
     v.profitThisYear += paid;
     // Processing industries in the catchment receive the delivered input.
-    const factory = stop.industries.find((id) =>
-      industryInfo(world.map.industries[id]!.type).accepts.includes(v.cargo),
+    const factory = stop.industries.find(
+      (id) => !isClosed(world, id) && industryInfo(world.map.industries[id]!.type).accepts.includes(v.cargo),
     );
     if (factory !== undefined) world.industryStats[factory]!.stock += v.load;
     world.delivered[v.cargo] = (world.delivered[v.cargo] ?? 0) + v.load;

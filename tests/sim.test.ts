@@ -267,25 +267,26 @@ describe('buses', () => {
     const stopTile = w.stops.get(stopsPlaced[0]!)!.tile;
     const x = stopTile % map.width;
     const y = (stopTile - x) / map.width;
-    let depotId = -1;
-    search: for (let r = 1; r <= 6; r++) {
+    // Each depot holds 8 vehicles, so 100 buses need 13 depots around the stop.
+    search: for (let r = 1; r <= 24; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           const tx = x + dx;
           const ty = y + dy;
           if (tx < 0 || ty < 0 || tx >= map.width || ty >= map.height) continue;
-          if (w.placeDepot(ty * map.width + tx).ok) {
-            depotId = [...w.depots.keys()][0]!;
-            break search;
-          }
+          w.placeDepot(ty * map.width + tx);
+          if (w.depots.size >= 13) break search;
         }
       }
     }
-    expect(depotId).toBeGreaterThanOrEqual(0);
-    for (let k = 0; k < 100; k++) {
-      const bus = w.buyBus(depotId)!;
-      w.setRoute(bus.id, [stopsPlaced[0]!, stopsPlaced[1]!]);
+    expect(w.depots.size).toBe(13);
+    for (const depotId of w.depots.keys()) {
+      for (let k = 0; k < 8 && w.vehicles.length < 100; k++) {
+        const bus = w.buyBus(depotId)!;
+        w.setRoute(bus.id, [stopsPlaced[0]!, stopsPlaced[1]!]);
+      }
     }
+    expect(w.vehicles.length).toBe(100);
     const start = performance.now();
     runDays(w, 30);
     const ms = performance.now() - start;

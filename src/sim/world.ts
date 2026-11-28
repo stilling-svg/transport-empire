@@ -4,17 +4,20 @@
  */
 import costs from '../data/costs.json' with { type: 'json' };
 import economy from '../data/economy.json' with { type: 'json' };
+import events from '../data/events.json' with { type: 'json' };
+import { Rng } from '../mapgen/rng.ts';
 import { Occupant, Terrain, WaterKind, type GameMap } from '../mapgen/types.ts';
 import { monthIndex } from './calendar.ts';
 import type { CargoId, StopKind } from './cargo.ts';
 import { DIRS, RoadOwner, TICKS_PER_DAY } from './constants.ts';
 import { computeCatchment, industryInfo, newIndustryStats, produceDaily } from './economy.ts';
+import { DEPOT_CAPACITY, dailyVehicleEvents, monthlyEvents } from './events.ts';
 import { Finance } from './finance.ts';
 import { buildTownRoads, isStraightRoad, planRoad, type RoadPlan } from './roads.ts';
-import type { Depot, IndustryStats, ModelId, Order, Stop, Vehicle } from './types.ts';
-import { MODELS, buildOccupancy, planToTarget, updateVehicle } from './vehicles.ts';
+import type { Depot, IndustryStats, Modifiers, ModelId, NewsItem, NewsKind, Order, Stop, Vehicle } from './types.ts';
+import { MODELS, buildOccupancy, planToTarget, sendForService, updateVehicle } from './vehicles.ts';
 
-export type { Depot, Order, Stop, Vehicle };
+export type { Depot, NewsItem, Order, Stop, Vehicle };
 
 export interface ActionResult {
   ok: boolean;
@@ -51,6 +54,16 @@ export class World {
   readonly townCarry: Array<{ passengers: number; mail: number }>;
   /** Total amount delivered per cargo since the start (statistics and tests). */
   readonly delivered: Partial<Record<CargoId, number>> = {};
+  /** Seeded source of all random events, so a seed replays the same way. */
+  readonly eventRng: Rng;
+  readonly modifiers: Modifiers = { payment: 1, paymentMonths: 0, running: 1, runningMonths: 0, festivals: new Map() };
+  readonly festivalMultiplier: number = events.shortEvents.festivalMultiplier;
+  /** Newest last. `newsCount` grows forever so the UI can spot new items. */
+  readonly news: NewsItem[] = [];
+  newsCount = 0;
+  /** Set when industries open or close, so labels are rebuilt. */
+  labelsDirty = false;
+  readonly initialIndustryCount: number;
   tick = 0;
   /** Tiles whose look changed since the renderer last looked. */
   readonly dirty = new Set<number>();
@@ -67,7 +80,9 @@ export class World {
     this.roadOwner = new Uint8Array(n);
     this.stopAt = new Int32Array(n).fill(-1);
     this.depotAt = new Int32Array(n).fill(-1);
-    this.industryStats = map.industries.map(() => newIndustryStats());
+    this.industryStats = map.industries.map((ind) => newIndustryStats(industryInfo(ind.type).productionPerMonth));
+    this.initialIndustryCount = map.industries.length;
+    this.eventRng = new Rng(`${map.usedSeed}#events`);
     this.townCarry = map.towns.map(() => ({ passengers: 0, mail: 0 }));
     buildTownRoads(this);
   }
@@ -97,6 +112,7 @@ export class World {
 
   private daily(): void {
     produceDaily(this);
+    dailyVehicleEvents(this);
     const month = monthIndex(this.day);
     if (month !== this.currentMonth) {
       this.monthly(month % 12 === 0);
@@ -108,7 +124,7 @@ export class World {
   private monthly(newYear: boolean): void {
     const f = this.finance;
     for (const v of this.vehicles) {
-      const cost = Math.round(MODELS[v.model].runningCost / 12);
+      const cost = Math.round((MODELS[v.model].runningCost * this.modifiers.running) / 12);
       f.spend('running', cost);
       v.profitThisYear -= cost;
     }
@@ -127,6 +143,13 @@ export class World {
         v.profitThisYear = 0;
       }
     }
+    monthlyEvents(this);
+  }
+
+  addNews(text: string, kind: NewsKind, tile?: number): void {
+    this.news.push({ day: Math.floor(this.day), text, kind, tile });
+    this.newsCount++;
+    if (this.news.length > events.maxNews) this.news.shift();
   }
 
   /** What the player's roads, bridges, stops and depots would cost to build again. */
@@ -209,7 +232,12 @@ export class World {
         continue;
       }
       if (this.depotAt[i]! >= 0) {
-        this.depots.delete(this.depotAt[i]!);
+        const id = this.depotAt[i]!;
+        if (this.vehicles.some((v) => v.depotId === id)) {
+          reason ??= 'Sell or move this depot’s vehicles first';
+          continue;
+        }
+        this.depots.delete(id);
         this.depotAt[i] = -1;
         this.clearRoadTile(i);
         removed++;
@@ -307,11 +335,26 @@ export class World {
   // -------------------------------------------------------------------------
   // Vehicles
 
+  /** Vehicles that belong to a depot. */
+  vehiclesIn(depotId: number): Vehicle[] {
+    return this.vehicles.filter((v) => v.depotId === depotId);
+  }
+
+  /** Why a vehicle cannot be bought here, or null if it can. */
+  buyProblem(depotId: number, model: ModelId): string | null {
+    if (!this.depots.has(depotId)) return 'No such depot';
+    if (this.vehiclesIn(depotId).length >= DEPOT_CAPACITY) {
+      return `This depot is full (${DEPOT_CAPACITY} vehicles) – build another depot`;
+    }
+    if (!this.finance.canAfford(MODELS[model].price)) return NOT_ENOUGH_MONEY;
+    return null;
+  }
+
   /** Buys a vehicle in a depot. Trucks need the cargo they will carry. */
   buyVehicle(depotId: number, model: ModelId = 'bus', cargo?: CargoId): Vehicle | null {
     const depot = this.depots.get(depotId);
     const info = MODELS[model];
-    if (!depot || !this.finance.canAfford(info.price)) return null;
+    if (!depot || this.buyProblem(depotId, model)) return null;
     const carried = cargo && info.cargo.includes(cargo) ? cargo : info.cargo[0]!;
     const id = this.nextVehicleId++;
     const sameKind = this.vehicles.filter((v) => v.model === model).length;
@@ -339,6 +382,13 @@ export class World {
       price: info.price,
       profitThisYear: 0,
       profitLastYear: 0,
+      builtDay: this.day,
+      reliability: 1,
+      lastServiceDay: this.day,
+      brokenTicks: 0,
+      breakdowns: 0,
+      goingToDepot: false,
+      serviceRequested: false,
     };
     this.vehicles.push(v);
     this.finance.spend('purchases', info.price);
@@ -348,6 +398,15 @@ export class World {
   /** Buys a bus (shorthand used by tests). */
   buyBus(depotId: number): Vehicle | null {
     return this.buyVehicle(depotId, 'bus');
+  }
+
+  /** Sends a vehicle to its depot for service. */
+  serviceVehicle(vehicleId: number): ActionResult {
+    const v = this.vehicles.find((x) => x.id === vehicleId);
+    if (!v) return { ok: false, cost: 0, reason: 'No such vehicle' };
+    return sendForService(this, v)
+      ? { ok: true, cost: 0 }
+      : { ok: false, cost: 0, reason: 'This vehicle has no depot' };
   }
 
   /** Sells a vehicle for part of its price. */
@@ -376,6 +435,8 @@ export class World {
     v.orders = orders;
     v.orderIndex = 0;
     v.loadingAt = -1;
+    if (v.state === 'servicing') return { ok: true, cost: 0 }; // continues after the service
+    if (v.brokenTicks === 0) v.goingToDepot = v.serviceRequested && v.goingToDepot;
     planToTarget(this, v);
     return { ok: true, cost: 0 };
   }

@@ -1,0 +1,52 @@
+{
+  "graceDays": 365,
+  "depotCapacity": 8,
+  "reliability": {
+    "dailyDecay": 0.0035,
+    "oldAgeDecayMultiplier": 2,
+    "floor": 0.2,
+    "breakdownChanceAtZero": 0.08,
+    "breakdownDaysMin": 2,
+    "breakdownDaysMax": 4,
+    "serviceIntervalDays": 120,
+    "serviceDays": 1,
+    "lifespanYears": 25,
+    "oldAgeServicedReliability": 0.85
+  },
+  "industry": {
+    "growTransported": 0.6,
+    "growChance": 0.25,
+    "growFactor": 1.25,
+    "maxFactor": 4,
+    "shrinkTransported": 0.2,
+    "shrinkChance": 0.15,
+    "shrinkFactor": 0.8,
+    "minFactor": 0.25,
+    "closeAfterUnservedMonths": 24,
+    "closeChancePerMonth": 0.02,
+    "closeWarningMonths": 3,
+    "newIndustryChancePerMonth": 0.07,
+    "newIndustryExtraWhenFewer": 0.15,
+    "newIndustryFirstMonth": 3
+  },
+  "shortEvents": {
+    "chancePerMonth": 0.3,
+    "weights": {
+      "boom": 3,
+      "strike": 2,
+      "festival": 3,
+      "recession": 1,
+      "fuel": 1
+    },
+    "boomMultiplier": 2,
+    "boomMonthsMin": 3,
+    "boomMonthsMax": 6,
+    "strikeMonths": 1,
+    "festivalMultiplier": 2,
+    "recessionPaymentMultiplier": 0.75,
+    "recessionMonths": 6,
+    "fuelChange": 0.2,
+    "fuelMonths": 12
+  },
+  "maxNews": 60
+}
