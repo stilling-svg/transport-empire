@@ -156,6 +156,15 @@ export class MapRenderer {
     }
   }
 
+  /** Rebuilds town and industry names (after an industry opens or closes). */
+  rebuildLabels(): void {
+    if (!this.world) return;
+    for (const t of [...this.townLabels, ...this.industryLabels]) t.destroy();
+    this.townLabels = [];
+    this.industryLabels = [];
+    this.buildLabels(this.world);
+  }
+
   private clear(): void {
     for (const c of this.chunks) c.gfx.destroy();
     this.chunks = [];
@@ -359,6 +368,7 @@ export class MapRenderer {
       this.townLabels.push(label);
     }
     for (const ind of map.industries) {
+      if (world.industryStats[ind.id]?.closed) continue;
       const h = map.heights[ind.y * map.width + ind.x]!;
       const p = this.mapView.pointToView(ind.x + 1, ind.y + 1);
       const top = tileTop(p.u - 1, p.v - 1, h);

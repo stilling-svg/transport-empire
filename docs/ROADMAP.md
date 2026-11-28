@@ -66,6 +66,23 @@ Færdig når:
 - [x] Alle fire kæder kan køres fra kilde til aftager (test)
 - [x] En simuleret bot-spiller kan tjene penge på et standardkort (test på 5 kort over 2 år)
 
+## Milepæl 3½ – Køretøjsinfo, tilfældige hændelser og depotgrænse 🟨 (venter på test på iPhone)
+**Mål:** Tilfældigheder gør spillet spændende, og spilleren har styr på sine køretøjer.
+
+Indhold:
+- Tryk på et køretøj: status, pålidelighed, fortjeneste, ruten tegnet på kortet; rediger rute, send til service, sælg.
+- Nedbrud og service (GDD 12.1), maks. 8 køretøjer pr. depot.
+- Industrier lever: produktion op/ned, lukning med varsel, nye industrier (GDD 12.2).
+- Korte begivenheder: fund/rekordhøst, strejke, byfest, lavkonjunktur, brændstofpriser (GDD 12.3).
+- Nyhedslinje og nyhedsarkiv. Ingen negative hændelser det første år.
+
+Færdig når:
+- [x] Nedbrud, service og depotgrænse er testet
+- [x] Lukning varsles 3 måneder før og aflyses ved betjening (test)
+- [x] Samme seed og handlinger giver samme hændelser (test)
+- [x] Ingen negative hændelser det første år (test på 3 kort)
+- [ ] Ejeren har afprøvet køretøjspanel, ruteredigering og nyheder på iPhone
+
 ## Milepæl 4 – Jernbane og tog ⬜
 **Mål:** Tog fragter gods og passagerer over længere afstande.
 

@@ -15,6 +15,9 @@ const LANE_OFFSET = 0.17;
 export class VehicleRenderer {
   readonly layer = new Container();
   private sprites = new Map<number, Graphics>();
+  private warnings = new Map<number, Graphics>();
+  /** Last drawn world positions, for tapping vehicles. */
+  private positions = new Map<number, { x: number; y: number }>();
 
   /** Positions all vehicles. Returns true if any vehicle is on screen. */
   update(world: World, mapView: MapView, view: ViewRect): boolean {
@@ -46,8 +49,25 @@ export class VehicleRenderer {
       }
       g.position.set(p.x, p.y);
       g.zIndex = p.depth;
+      this.positions.set(bus.id, { x: p.x, y: p.y - 4 });
+      // A red warning sign above broken-down vehicles.
+      let warn = this.warnings.get(bus.id);
+      if (bus.brokenTicks > 0) {
+        if (!warn) {
+          warn = new Graphics();
+          warn.poly([0, -22, 6, -12, -6, -12]).fill(0xff3b30);
+          warn.rect(-0.75, -19.5, 1.5, 4).fill(0xffffff);
+          warn.rect(-0.75, -14.5, 1.5, 1.5).fill(0xffffff);
+          this.layer.addChild(warn);
+          this.warnings.set(bus.id, warn);
+        }
+        warn.position.set(p.x, p.y);
+        warn.zIndex = p.depth + 0.01;
+        warn.visible = true;
+      } else if (warn) warn.visible = false;
       const visible =
         bus.state !== 'idle' &&
+        bus.state !== 'servicing' &&
         p.x >= view.x - 20 &&
         p.x <= view.x + view.width + 20 &&
         p.y >= view.y - 20 &&
@@ -59,6 +79,9 @@ export class VehicleRenderer {
       if (!alive.has(id)) {
         g.destroy();
         this.sprites.delete(id);
+        this.warnings.get(id)?.destroy();
+        this.warnings.delete(id);
+        this.positions.delete(id);
       }
     }
     this.layer.sortableChildren = true;
@@ -67,7 +90,27 @@ export class VehicleRenderer {
 
   clear(): void {
     for (const g of this.sprites.values()) g.destroy();
+    for (const g of this.warnings.values()) g.destroy();
     this.sprites.clear();
+    this.warnings.clear();
+    this.positions.clear();
+  }
+
+  /** The visible vehicle closest to a world point within `radius`, or -1. */
+  hitTest(world: World, wx: number, wy: number, radius: number): number {
+    let best = -1;
+    let bestD = radius;
+    for (const v of world.vehicles) {
+      if (v.state === 'idle' || v.state === 'servicing') continue;
+      const p = this.positions.get(v.id);
+      if (!p) continue;
+      const d = Math.hypot(p.x - wx, p.y - wy);
+      if (d < bestD) {
+        bestD = d;
+        best = v.id;
+      }
+    }
+    return best;
   }
 }
 

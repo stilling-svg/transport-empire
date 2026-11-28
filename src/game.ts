@@ -17,12 +17,13 @@ import { cargoInfo, type CargoId } from './sim/cargo.ts';
 import { RoadOwner, TICKS_PER_DAY } from './sim/constants.ts';
 import { industryInfo, stopAccepts, stopSupplies } from './sim/economy.ts';
 import { LEDGER_KEYS, LEDGER_LABELS, ledgerTotal, type Ledger } from './sim/finance.ts';
-import type { ModelId, Order } from './sim/types.ts';
+import { DEPOT_CAPACITY, SERVICE_INTERVAL_DAYS, industryName, vehicleAgeYears } from './sim/events.ts';
+import type { ModelId, Order, Vehicle } from './sim/types.ts';
 import { MODELS } from './sim/vehicles.ts';
 import type { ActionResult } from './sim/world.ts';
 import { World } from './sim/world.ts';
 import { extendPath } from './ui/dragPath.ts';
-import { Hud, formatMoney } from './ui/hud.ts';
+import { Hud, formatDate, formatMoney } from './ui/hud.ts';
 import { Panel } from './ui/panel.ts';
 import { Toolbar, type Tool } from './ui/toolbar.ts';
 
@@ -40,11 +41,22 @@ const WATER_NAMES: Record<number, string> = {
   [WaterKind.River]: 'River',
 };
 const VEHICLE_STATE: Record<string, string> = {
-  idle: 'in the depot',
+  idle: 'in the depot, no route',
   driving: 'driving',
-  loading: 'at a stop',
+  loading: 'loading at a stop',
   lost: 'cannot find a way',
+  servicing: 'being serviced',
 };
+
+function vehicleStatus(world: World, v: Vehicle): string {
+  if (v.brokenTicks > 0) return `broken down (${Math.ceil(v.brokenTicks / TICKS_PER_DAY)} days)`;
+  if (v.goingToDepot && v.state === 'driving') return 'heading to the depot for service';
+  if (v.state === 'driving') {
+    const stop = world.stops.get(v.orders[v.orderIndex]?.stopId ?? -1);
+    return stop ? `driving to ${stop.name}` : 'driving';
+  }
+  return VEHICLE_STATE[v.state] ?? v.state;
+}
 const cargoName = (c: CargoId): string => cargoInfo(c).name;
 const amount = (c: CargoId, n: number): string => `${Math.round(n)} ${cargoInfo(c).unit}`;
 const signed = (n: number): string => (n > 0 ? `+${formatMoney(n)}` : formatMoney(n));
@@ -55,6 +67,8 @@ const MAX_TICKS_PER_FRAME = 240;
 interface RouteEdit {
   vehicleId: number;
   orders: Order[];
+  /** Editing an existing route (Save) rather than a new one (Start). */
+  existing: boolean;
 }
 
 export class Game {
@@ -75,6 +89,10 @@ export class Game {
   private routeEdit: RouteEdit | null = null;
   /** Redraws the open panel with fresh numbers (called about once a second). */
   private panelRefresh: (() => void) | null = null;
+  /** Vehicle whose route is shown on the map, or -1. */
+  private shownVehicle = -1;
+  private seenNews = 0;
+  private unreadNews = 0;
   private frameCount = 0;
   private readonly app: Application;
   /** Which of the four sides the map is viewed from. */
@@ -101,6 +119,7 @@ export class Game {
       onSpeed: (s) => this.setSpeed(s),
       onRotate: (dir) => this.rotate(dir),
       onMoney: () => this.showFinances(),
+      onNews: () => this.showNews(),
     });
     this.toolbar = new Toolbar(
       toolbar,
@@ -128,6 +147,10 @@ export class Game {
       this.vehicles.clear();
       this.overlay.clear();
       this.routeEdit = null;
+      this.shownVehicle = -1;
+      this.seenNews = 0;
+      this.unreadNews = 0;
+      this.hud.setUnread(0);
       this.panel.hide();
       this.selectTool('view');
       this.camera.fit(this.renderer.bounds);
@@ -162,6 +185,12 @@ export class Game {
       this.renderer.update(view, this.camera.currentZoom);
       const busesVisible = this.vehicles.update(this.world, this.renderer.view, view);
       this.hud.setStatus(this.world.day, this.world.money);
+      this.checkNews();
+      if (this.world.labelsDirty) {
+        this.world.labelsDirty = false;
+        this.renderer.rebuildLabels();
+        this.needsRender = true;
+      }
       if (++this.frameCount % 30 === 0 && this.panelRefresh && this.panel.isOpen) this.panelRefresh();
       if (this.needsRender || (busesVisible && this.speed > 0)) {
         this.app.render();
@@ -331,6 +360,12 @@ export class Game {
       this.addRouteStop(tile);
       return;
     }
+    const w = this.camera.toWorld(sx, sy);
+    const hit = this.vehicles.hitTest(this.world, w.x, w.y, 22 / this.camera.currentZoom);
+    if (hit >= 0) {
+      this.showVehicle(hit);
+      return;
+    }
     if (tile < 0) {
       this.closePanel();
       return;
@@ -340,11 +375,34 @@ export class Game {
 
   private showPanel(content: Parameters<Panel['show']>[0], refresh: (() => void) | null = null): void {
     this.panelRefresh = refresh;
-    this.panel.show(content);
+    if (this.shownVehicle >= 0 && !this.routeEdit) {
+      // Another panel replaces the vehicle panel: stop drawing its route.
+      this.shownVehicle = -1;
+      this.overlay.clear();
+      this.needsRender = true;
+    }
+    const userClose = content.onClose;
+    this.panel.show({
+      ...content,
+      onClose: () => {
+        this.panelRefresh = null;
+        if (this.shownVehicle >= 0) {
+          this.shownVehicle = -1;
+          this.overlay.clear();
+          this.needsRender = true;
+        }
+        userClose?.();
+      },
+    });
   }
 
   private closePanel(): void {
     this.panelRefresh = null;
+    if (this.shownVehicle >= 0) {
+      this.shownVehicle = -1;
+      this.overlay.clear();
+      this.needsRender = true;
+    }
     this.panel.hide();
   }
 
@@ -439,12 +497,16 @@ export class Game {
         const pct = stats.producedLastMonth > 0 ? Math.round((stats.transportedLastMonth / stats.producedLastMonth) * 100) : 0;
         lines.push(
           info.productionPerMonth > 0
-            ? `Produces ${amount(c, info.productionPerMonth)} ${cargoName(c).toLowerCase()} a month`
+            ? `Produces ${amount(c, stats.production)} ${cargoName(c).toLowerCase()} a month`
             : `Makes ${cargoName(c).toLowerCase()} from what is delivered`,
         );
         lines.push(`Last month: ${amount(c, stats.producedLastMonth)} made, ${pct} % transported`);
       }
-      this.showPanel({ title: info.name, lines }, render);
+      const st = this.world.industryStats[id]!;
+      if (st.closingIn > 0) lines.push(`⚠ Closes in ${st.closingIn} months unless you start serving it`);
+      if (st.strikeMonths > 0) lines.push(st.strikeWarned ? '⚠ Workers threaten to strike next month' : '⚠ On strike');
+      if (st.boostMonths > 0) lines.push(`Double production for ${st.boostMonths} more months`);
+      this.showPanel({ title: industryName(this.world, id), lines }, render);
     };
     render();
   }
@@ -458,40 +520,32 @@ export class Game {
         this.closePanel();
         return;
       }
-      const list = this.world.vehicles.filter((v) => v.depotId === depotId);
-      const lines =
-        list.length === 0
-          ? ['No vehicles yet. Buy one, then tap the stops it should visit.']
-          : list.map(
-              (v) =>
-                `${v.name} (${cargoName(v.cargo)}): ${VEHICLE_STATE[v.state]} · ` +
-                `${v.load}/${v.capacity} · profit this year ${signed(v.profitThisYear)}`,
-            );
+      const list = this.world.vehiclesIn(depotId);
       const buy = (model: ModelId): { label: string; onClick: () => void; primary?: boolean; disabled?: boolean } => ({
         label: `${MODELS[model].name} ${formatMoney(MODELS[model].price)}`,
         primary: model === 'bus',
-        disabled: this.world.money < MODELS[model].price,
+        disabled: this.world.buyProblem(depotId, model) !== null,
         onClick: () => (model === 'truck' ? this.chooseTruckCargo(depotId) : this.buy(depotId, model)),
       });
+      const full = list.length >= DEPOT_CAPACITY;
       this.showPanel(
         {
-          title: 'Depot',
-          lines,
+          title: `Depot · ${list.length} / ${DEPOT_CAPACITY} vehicles`,
+          lines: [
+            full
+              ? 'This depot is full. Build another depot to buy more vehicles.'
+              : list.length === 0
+                ? 'Buy a vehicle, then tap the stops it should visit.'
+                : `Vehicles here get a service about every ${SERVICE_INTERVAL_DAYS} days. Tap one to see it.`,
+          ],
           actions: [
             buy('bus'),
             buy('van'),
             buy('truck'),
-            ...list.slice(-3).flatMap((v) => [
-              { label: `Route: ${v.name}`, onClick: () => this.startRouteEdit(v.id) },
-              {
-                label: `Sell ${v.name}`,
-                onClick: () => {
-                  const res = this.world.sellVehicle(v.id);
-                  this.toolbar.showHint(res.ok ? `Sold for ${formatMoney(-res.cost)}` : (res.reason ?? ''), res.ok ? 'ok' : 'error', true);
-                  render();
-                },
-              },
-            ]),
+            ...list.map((v) => ({
+              label: `${v.brokenTicks > 0 ? '⚠ ' : ''}${v.name}`,
+              onClick: () => this.showVehicle(v.id),
+            })),
           ],
         },
         render,
@@ -509,21 +563,82 @@ export class Game {
   }
 
   private buy(depotId: number, model: ModelId, cargo?: CargoId): void {
-    const v = this.world.buyVehicle(depotId, model, cargo);
+    const problem = this.world.buyProblem(depotId, model);
+    const v = problem ? null : this.world.buyVehicle(depotId, model, cargo);
     if (!v) {
-      this.toolbar.showHint('Not enough money', 'error', true);
+      this.toolbar.showHint(problem ?? 'Cannot buy that here', 'error', true);
       return;
     }
     this.toolbar.showHint(`Bought ${v.name} for ${formatMoney(v.price)}`, 'ok', true);
-    this.startRouteEdit(v.id);
+    this.startRouteEdit(v.id, false);
+  }
+
+  /** Vehicle card: status, numbers and its route drawn on the map. */
+  private showVehicle(vehicleId: number): void {
+    const render = (): void => {
+      const v = this.world.vehicles.find((x) => x.id === vehicleId);
+      if (!v) {
+        this.closePanel();
+        return;
+      }
+      const route = v.orders.map((o, k) => {
+        const name = this.world.stops.get(o.stopId)?.name ?? '?';
+        const here = k === v.orderIndex ? '▶ ' : '';
+        return `${here}${k + 1}. ${name}${o.fullLoad ? ' (full load)' : ''}`;
+      });
+      const nextService = Math.max(0, Math.round(v.lastServiceDay + SERVICE_INTERVAL_DAYS - this.world.day));
+      this.showPanel(
+        {
+          title: v.name,
+          lines: [
+            `${cargoName(v.cargo)} · ${amount(v.cargo, v.load)} of ${amount(v.cargo, v.capacity)} · ${vehicleStatus(this.world, v)}`,
+            `Reliability ${Math.round(v.reliability * 100)} % · ${v.breakdowns} breakdowns · service in ${nextService} days · ${Math.floor(vehicleAgeYears(this.world, v))} years old`,
+            `Profit this year ${signed(v.profitThisYear)} · last year ${signed(v.profitLastYear)}`,
+            route.length ? `Route: ${route.join('  ')}` : 'No route yet',
+          ],
+          actions: [
+            { label: 'Edit route', primary: true, onClick: () => this.startRouteEdit(v.id, true) },
+            {
+              label: 'Send for service',
+              disabled: v.goingToDepot || v.state === 'servicing',
+              onClick: () => {
+                const res = this.world.serviceVehicle(v.id);
+                this.toolbar.showHint(res.ok ? `${v.name} is heading to the depot` : (res.reason ?? ''), res.ok ? 'ok' : 'error', true);
+                render();
+              },
+            },
+            {
+              label: `Sell for ${formatMoney(Math.round(v.price * 0.75))}`,
+              onClick: () => {
+                const res = this.world.sellVehicle(v.id);
+                this.toolbar.showHint(res.ok ? `Sold ${v.name}` : (res.reason ?? ''), res.ok ? 'ok' : 'error', true);
+                this.closePanel();
+              },
+            },
+          ],
+        },
+        render,
+      );
+      this.shownVehicle = v.id;
+      this.overlay.showRoute(this.world, v);
+      this.needsRender = true;
+    };
+    this.selectTool('view');
+    render();
   }
 
   // -------------------------------------------------------------------------
   // Routes
 
-  private startRouteEdit(vehicleId: number): void {
+  private startRouteEdit(vehicleId: number, existing: boolean): void {
     this.selectTool('view');
-    this.routeEdit = { vehicleId, orders: [] };
+    const v = this.world.vehicles.find((x) => x.id === vehicleId);
+    this.shownVehicle = -1;
+    this.routeEdit = {
+      vehicleId,
+      orders: existing && v ? v.orders.map((o) => ({ ...o })) : [],
+      existing,
+    };
     this.showRouteEditor();
   }
 
@@ -544,6 +659,37 @@ export class Game {
     this.showRouteEditor();
   }
 
+  /** Small menu for one stop in the route being edited. */
+  private editOrder(index: number): void {
+    const edit = this.routeEdit;
+    const order = edit?.orders[index];
+    if (!edit || !order) return;
+    const name = this.world.stops.get(order.stopId)?.name ?? '?';
+    this.showPanel({
+      title: `${index + 1}. ${name}`,
+      onClose: () => this.cancelRouteEdit(),
+      lines: [order.fullLoad ? 'The vehicle waits here until it is full.' : 'The vehicle loads what is waiting and drives on.'],
+      actions: [
+        {
+          label: order.fullLoad ? 'Do not wait for full load' : 'Wait for full load',
+          primary: true,
+          onClick: () => {
+            order.fullLoad = !order.fullLoad;
+            this.showRouteEditor();
+          },
+        },
+        {
+          label: 'Remove from route',
+          onClick: () => {
+            edit.orders.splice(index, 1);
+            this.showRouteEditor();
+          },
+        },
+        { label: 'Back', onClick: () => this.showRouteEditor() },
+      ],
+    });
+  }
+
   private showRouteEditor(): void {
     const edit = this.routeEdit;
     if (!edit) return;
@@ -553,45 +699,33 @@ export class Game {
       this.cancelRouteEdit();
       return;
     }
-    const names = edit.orders.map((o) => `${this.world.stops.get(o.stopId)!.name}${o.fullLoad ? ' (full load)' : ''}`);
-    const last = edit.orders[edit.orders.length - 1];
     const kind = MODELS[v.model].stop === 'bus' ? 'bus stops' : 'loading bays';
     this.showPanel({
       title: `Route for ${v.name}`,
       onClose: () => this.cancelRouteEdit(),
       lines: [
-        `Tap ${kind} on the map in the order ${v.name} should visit them.`,
-        names.length ? names.join(' → ') : 'No stops chosen yet',
-      ],
+        `Tap ${kind} on the map to add them. Tap a stop below to change or remove it.`,
+        edit.orders.length ? '' : 'No stops chosen yet',
+      ].filter(Boolean),
       actions: [
+        ...edit.orders.map((o, k) => ({
+          label: `${k + 1}. ${this.world.stops.get(o.stopId)!.name}${o.fullLoad ? ' ⏳' : ''}`,
+          onClick: () => this.editOrder(k),
+        })),
         {
-          label: 'Start',
+          label: edit.existing ? 'Save' : 'Start',
           primary: true,
           disabled: edit.orders.length < 2,
           onClick: () => {
             const res = this.world.setRoute(edit.vehicleId, edit.orders);
+            const id = edit.vehicleId;
             this.cancelRouteEdit();
             this.toolbar.showHint(
-              res.ok ? `${v.name} is on its way` : (res.reason ?? 'Could not set route'),
+              res.ok ? (edit.existing ? `New route saved for ${v.name}` : `${v.name} is on its way`) : (res.reason ?? 'Could not set route'),
               res.ok ? 'ok' : 'error',
               true,
             );
-          },
-        },
-        {
-          label: last?.fullLoad ? 'No full load' : 'Wait for full load',
-          disabled: !last,
-          onClick: () => {
-            if (last) last.fullLoad = !last.fullLoad;
-            this.showRouteEditor();
-          },
-        },
-        {
-          label: 'Remove last',
-          disabled: edit.orders.length === 0,
-          onClick: () => {
-            edit.orders.pop();
-            this.showRouteEditor();
+            if (res.ok) this.showVehicle(id);
           },
         },
         { label: 'Cancel', onClick: () => this.cancelRouteEdit() },
@@ -612,6 +746,53 @@ export class Game {
     this.overlay.clear();
     this.closePanel();
     this.toolbar.setTool(this.toolbar.current);
+    this.needsRender = true;
+  }
+
+  // -------------------------------------------------------------------------
+  // News
+
+  private checkNews(): void {
+    const w = this.world;
+    if (w.newsCount === this.seenNews) return;
+    const fresh = w.newsCount - this.seenNews;
+    this.seenNews = w.newsCount;
+    this.unreadNews += fresh;
+    const latest = w.news[w.news.length - 1];
+    if (latest) this.hud.showHeadline(latest.text, latest.kind);
+    this.hud.setUnread(this.unreadNews);
+    if (this.shownVehicle >= 0 && this.panelRefresh) this.panelRefresh();
+  }
+
+  private showNews(): void {
+    this.unreadNews = 0;
+    this.hud.setUnread(0);
+    const items = this.world.news.slice(-12).reverse();
+    const icon = { good: '🟢', bad: '🔴', info: '🔵' } as const;
+    this.selectTool('view');
+    this.showPanel({
+      title: 'News',
+      lines: items.length
+        ? items.map((n) => `${icon[n.kind]} ${formatDate(n.day)} · ${n.text}`)
+        : ['Nothing has happened yet.'],
+      actions: items
+        .filter((n) => n.tile !== undefined)
+        .slice(0, 4)
+        .map((n) => ({
+          label: `Show: ${n.text.length > 28 ? `${n.text.slice(0, 27)}…` : n.text}`,
+          onClick: () => this.jumpTo(n.tile!),
+        })),
+    });
+  }
+
+  /** Centres the camera on a tile. */
+  private jumpTo(tile: number): void {
+    const { map } = this.world;
+    const x = tile % map.width;
+    const y = (tile - x) / map.width;
+    const { u, v } = this.renderer.view.toView(x, y);
+    const p = tileCenter(u, v, map.heights[tile]!);
+    this.camera.centerOn(p.px, p.py);
     this.needsRender = true;
   }
 

@@ -273,3 +273,48 @@ button:disabled {
   color: #1d2b36;
   font-weight: 700;
 }
+
+/* ---- News ---- */
+.newsbtn {
+  position: relative;
+  min-width: 44px;
+  padding: 0 8px;
+  font-size: 18px;
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.badge[hidden],
+.headline[hidden] {
+  display: none;
+}
+
+.headline {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  min-height: 36px;
+  text-align: left;
+  font-size: 14px;
+  background: rgba(42, 59, 72, 0.95);
+}
+
+.headline[data-kind='good'] {
+  border-color: #4cd964;
+}
+
+.headline[data-kind='bad'] {
+  border-color: #ff3b30;
+}

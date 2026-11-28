@@ -1,6 +1,7 @@
 /** Build previews and highlights drawn on top of the map. */
 import { Graphics } from 'pixi.js';
 import type { RoadPlan } from '../sim/roads.ts';
+import type { Vehicle } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { TILE_H, TILE_W, tileTop } from './iso.ts';
 import { HIGHLIGHT, PREVIEW_BAD, PREVIEW_OK } from './palette.ts';
@@ -34,6 +35,27 @@ export class Overlay {
       this.gfx
         .poly([px, py, px + TILE_W / 2, py + TILE_H / 2, px, py + TILE_H, px - TILE_W / 2, py + TILE_H / 2])
         .stroke({ width: 2.5, color });
+    }
+  }
+
+  /**
+   * A vehicle's route: all its stops outlined (the next one brighter) and a
+   * line along the road it will take to the next stop.
+   */
+  showRoute(world: World, v: Vehicle): void {
+    this.gfx.clear();
+    const stops = v.orders.map((o) => world.stops.get(o.stopId)).filter((s) => s !== undefined);
+    const next = v.orders[v.orderIndex]?.stopId;
+    for (const s of stops) this.diamond(world, s.tile, s.id === next && !v.goingToDepot ? HIGHLIGHT : 0x8fd3ff, 0.45);
+    const rest = v.path.slice(v.pathIndex);
+    if (rest.length >= 2) {
+      const pts = rest.map((i) => {
+        const t = this.top(world, i);
+        return [t.px, t.py + TILE_H / 2] as const;
+      });
+      this.gfx.moveTo(pts[0]![0], pts[0]![1]);
+      for (const [x, y] of pts.slice(1)) this.gfx.lineTo(x, y);
+      this.gfx.stroke({ width: 3, color: HIGHLIGHT, alpha: 0.9 });
     }
   }
 

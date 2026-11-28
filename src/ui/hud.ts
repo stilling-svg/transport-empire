@@ -12,6 +12,8 @@ export interface HudHandlers {
   onRotate: (dir: 1 | -1) => void;
   /** Tapping the money opens the finances. */
   onMoney: () => void;
+  /** Tapping the news button or a headline opens the news archive. */
+  onNews: () => void;
 }
 
 const SIZE_LABEL: Record<MapSize, string> = {
@@ -33,6 +35,9 @@ export class Hud {
   private readonly copyButton: HTMLButtonElement;
   private readonly dateEl: HTMLElement;
   private readonly moneyEl: HTMLButtonElement;
+  private readonly badge: HTMLElement;
+  private readonly headline: HTMLButtonElement;
+  private headlineTimer = 0;
   private readonly speedButtons: HTMLButtonElement[];
   private mapInfo = '';
   private lastDate = '';
@@ -51,7 +56,9 @@ export class Hud {
           <button type="button" id="rot-right" aria-label="Rotate map clockwise">⟳</button>
         </span>
         <button type="button" class="money" id="money" aria-label="Finances"></button>
+        <button type="button" class="newsbtn" id="newsbtn" aria-label="News">📰<span class="badge" id="badge" hidden></span></button>
       </div>
+      <button type="button" class="headline" id="headline" hidden></button>
       <details class="mapbar">
         <summary>Map</summary>
         <div class="bar">
@@ -77,6 +84,10 @@ export class Hud {
     this.dateEl = root.querySelector('#date')!;
     this.moneyEl = root.querySelector('#money')!;
     this.moneyEl.addEventListener('click', handlers.onMoney);
+    this.badge = root.querySelector('#badge')!;
+    this.headline = root.querySelector('#headline')!;
+    root.querySelector('#newsbtn')!.addEventListener('click', handlers.onNews);
+    this.headline.addEventListener('click', handlers.onNews);
     this.speedButtons = [...root.querySelectorAll<HTMLButtonElement>('.speed')];
 
     const size = (): MapSize => this.sizeSelect.value as MapSize;
@@ -132,6 +143,20 @@ export class Hud {
       this.moneyEl.textContent = formatMoney(money);
       this.moneyEl.classList.toggle('negative', money < 0);
     }
+  }
+
+  /** Shows the newest headline for a few seconds and the number of unread items. */
+  showHeadline(text: string, kind: 'good' | 'bad' | 'info'): void {
+    this.headline.textContent = text;
+    this.headline.dataset.kind = kind;
+    this.headline.hidden = false;
+    window.clearTimeout(this.headlineTimer);
+    this.headlineTimer = window.setTimeout(() => (this.headline.hidden = true), 6000);
+  }
+
+  setUnread(count: number): void {
+    this.badge.hidden = count === 0;
+    this.badge.textContent = count > 9 ? '9+' : String(count);
   }
 
   private async copyLink(): Promise<void> {

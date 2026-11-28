@@ -97,8 +97,9 @@ Et kort er spilbart, når alle reglerne er opfyldt:
 | By | Passagerer, Post | Passagerer, Post, Fødevarer, Planker | Passagerer: indbyggere / 8, post: indbyggere / 20 |
 
 **Produktionsændringer:** Hver måned vurderes hver kilde. Transporteres mindst
-60 % af produktionen, er der en chance for, at produktionen stiger. Under 20 %
-giver risiko for fald. Industrier lukker ikke i MVP.
+60 % af produktionen, er der en chance for, at produktionen stiger. Betjenes en
+industri dårligt (under 20 %), er der risiko for fald. Industrier kan lukke og nye
+kan åbne – se afsnit 12.
 
 ### 4.3 Byvækst
 En by vokser hurtigere, når den
@@ -119,7 +120,7 @@ Byer bygger nye huse og veje automatisk. De river aldrig spillerens anlæg ned.
 | Bro (vej/bane) | $1.000 | Spænder over vand eller dale, maks. 10 felter |
 | Busstoppested / læsseplads | $800 | Opland 3 felter |
 | Banegård | $1.500 pr. perronfelt | Opland 4 felter, 2–6 felter lang |
-| Depot (vej/tog) | $1.000 | Her købes og vedligeholdes køretøjer |
+| Depot (vej/tog) | $1.000 | Her købes og vedligeholdes køretøjer; maks. 8 køretøjer pr. depot |
 
 **Opland:** En station kan kun hente fra og levere til industrier og huse
 inden for sit opland.
@@ -146,11 +147,12 @@ byer lægger kun gods ved stop, som et køretøj med den vare har i sin rute.
 | Lukket godsvogn | Vogn | 1930 | 25 t fødevarer/planker | – | $7.000 | $400 |
 
 Elektriske lokomotiver kører på almindelige spor i MVP (ingen elektrificering).
-Køretøjer har en levetid på 25 år. Derefter stiger driftsudgiften med 50 %.
-Der er ingen nedbrud i MVP.
+Køretøjer har en levetid på 25 år. Derefter går de oftere i stykker (afsnit 12).
 
 ### 5.3 Ruter og ordrer
 - Spilleren giver et køretøj en rute ved at trykke på stationerne i rækkefølge.
+- Tryk på et køretøj for at se status, pålidelighed, fortjeneste og ruten tegnet på
+  kortet. Ruten kan redigeres: stop kan tilføjes, fjernes og sættes til fuld last.
 - Hver ordre kan sættes til **"Vent på fuld last"**.
 - Køretøjer finder vej med A* på vej- og sporgrafen.
 - **Tog i MVP:** et tog reserverer strækningen mellem to stationer eller sidespor,
@@ -256,3 +258,44 @@ Lån optages og tilbagebetales i trin af $10.000.
 - Indkøb af grafik: hvilken pakke eller grafiker, og hvilken licens?
 - Endeligt navn på spillet.
 - Lokalisering til flere sprog end engelsk.
+
+## 12. Tilfældige hændelser
+
+Formålet er spændende beslutninger, ikke straf. Tre regler:
+1. **Varsel før det slemme** (lukning varsles 3 måneder før, strejke 1 måned før).
+2. **Spilleren kan gøre noget** (service mod nedbrud, betjening mod lukning,
+   flere ruter mod uheld på én).
+3. **Rolig start:** ingen negative hændelser det første år.
+
+Alt styres af en seedet RNG, så samme seed og samme handlinger giver samme forløb.
+Tal ligger i `src/data/events.json`. Hændelser vises i en nyhedslinje og et
+nyhedsarkiv (📰), hvorfra man kan hoppe til stedet på kortet.
+
+### 12.1 Nedbrud og service
+- Pålidelighed starter på 100 % og falder 0,35 %-point om dagen (dobbelt så hurtigt
+  efter 25 år), ned til 20 %.
+- Risiko for nedbrud pr. dag = (1 − pålidelighed)² × 8 %. Et nedbrud stopper
+  køretøjet 2–4 dage på vejen, og køretøjer bag det holder i kø.
+- Hver 120. dag kører køretøjet selv til sit depot til service (1 dag), og
+  pålideligheden bliver 100 % igen (85 % for køretøjer over 25 år).
+  Spilleren kan også sende et køretøj til service.
+- Hvert depot har plads til 8 køretøjer. Et depot med køretøjer kan ikke rives ned.
+
+### 12.2 Industrier lever
+- Produktion stiger (×1,25, op til 4× start) ved god betjening og falder (×0,8, ned
+  til ¼) ved dårlig betjening. Ubetjente industrier får lov at være i fred.
+- En industri, der har været helt ubetjent i 24 måneder, kan (2 % pr. måned)
+  varsle lukning om 3 måneder. Begynder spilleren at betjene den, aflyses lukningen.
+  Den sidste industri af en slags lukker aldrig.
+- Nye industrier åbner (ca. 7 % chance pr. måned, mere hvis der er færre end ved
+  start) på ledige pladser på kortet.
+
+### 12.3 Korte begivenheder (ca. 30 % chance pr. måned)
+| Begivenhed | Virkning | Varighed |
+| --- | --- | --- |
+| Fund / rekordhøst / fint tømmer | Dobbelt produktion, oftest hos en betjent industri | 3–6 mdr. |
+| Strejke | Ingen produktion hos en betjent industri (varsles en måned før) | 1 md. |
+| Byfest | Dobbelt så mange passagerer i en by | 1 md. |
+| Lavkonjunktur | Leveringer betaler 25 % mindre | 6 mdr. |
+| Brændstofpriser | Driftsudgifter ±20 % | 12 mdr. |
+
