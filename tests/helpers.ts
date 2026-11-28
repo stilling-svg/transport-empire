@@ -1,4 +1,11 @@
-import { DEFAULT_SETTINGS, Terrain, WaterKind, type GameMap } from '../src/mapgen/types.ts';
+import {
+  DEFAULT_SETTINGS,
+  Occupant,
+  Terrain,
+  WaterKind,
+  type GameMap,
+  type IndustryType,
+} from '../src/mapgen/types.ts';
 
 /** A small hand-made map: flat grass at height 1, no towns or industries. */
 export function flatMap(width = 16, height = 16): GameMap {
@@ -42,4 +49,32 @@ export function col(map: GameMap, x: number, y0: number, y1: number): number[] {
   const step = y1 >= y0 ? 1 : -1;
   for (let y = y0; y !== y1 + step; y += step) out.push(y * map.width + x);
   return out;
+}
+
+/** Puts a 2x2 industry with its top-left corner at (x, y). Call before creating the World. */
+export function addIndustry(map: GameMap, type: IndustryType, x: number, y: number): number {
+  const id = map.industries.length;
+  map.industries.push({ id, type, x, y });
+  for (let dy = 0; dy < 2; dy++) {
+    for (let dx = 0; dx < 2; dx++) {
+      const i = (y + dy) * map.width + x + dx;
+      map.occupant[i] = Occupant.Industry;
+      map.occupantId[i] = id;
+    }
+  }
+  return id;
+}
+
+/** Puts a small 3x3 town centred on (x, y). Call before creating the World. */
+export function addTown(map: GameMap, x: number, y: number, population = 400): number {
+  const id = map.towns.length;
+  map.towns.push({ id, name: `Town${id}`, x, y, population });
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const i = (y + dy) * map.width + x + dx;
+      map.occupant[i] = Occupant.Town;
+      map.occupantId[i] = id;
+    }
+  }
+  return id;
 }

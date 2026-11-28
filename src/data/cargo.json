@@ -1,0 +1,9 @@
+{
+  "passengers": { "name": "Passengers", "unit": "passengers", "baseRate": 4, "fastDays": 10, "sensitivity": "high", "stop": "bus", "color": "0xe8a23a" },
+  "mail": { "name": "Mail", "unit": "bags", "baseRate": 5, "fastDays": 8, "sensitivity": "high", "stop": "bus", "color": "0xd9534f" },
+  "food": { "name": "Food", "unit": "t", "baseRate": 5, "fastDays": 15, "sensitivity": "high", "stop": "truck", "color": "0xc0504d" },
+  "coal": { "name": "Coal", "unit": "t", "baseRate": 3, "fastDays": 40, "sensitivity": "low", "stop": "truck", "color": "0x3b3b3b" },
+  "grain": { "name": "Grain", "unit": "t", "baseRate": 3, "fastDays": 30, "sensitivity": "medium", "stop": "truck", "color": "0xd6b84a" },
+  "wood": { "name": "Wood", "unit": "t", "baseRate": 3, "fastDays": 40, "sensitivity": "low", "stop": "truck", "color": "0x7a5230" },
+  "planks": { "name": "Planks", "unit": "t", "baseRate": 4, "fastDays": 30, "sensitivity": "low", "stop": "truck", "color": "0xc8a26b" }
+}

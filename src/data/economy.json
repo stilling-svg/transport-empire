@@ -1,0 +1,17 @@
+{
+  "startMoney": 200000,
+  "maxLoan": 300000,
+  "loanStep": 10000,
+  "interestRate": 0.05,
+  "maintenanceRate": 0.02,
+  "paymentScale": 0.3,
+  "difficultyPaymentMultiplier": 1.0,
+  "slowdownFactor": { "high": 3, "medium": 4.5, "low": 6 },
+  "minTimeFactor": 0.25,
+  "catchmentRadius": 3,
+  "maxLoadersPerStop": 2,
+  "maxWaitingPerCargo": 2000,
+  "townPassengersPerPopulation": 0.125,
+  "townMailPerPopulation": 0.05,
+  "sellValueFraction": 0.75
+}

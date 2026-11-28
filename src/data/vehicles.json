@@ -1,6 +1,10 @@
 {
   "kmhToTilesPerDay": 0.045,
-  "bus": { "name": "Rambler Bus", "speedKmh": 56, "capacity": 30, "price": 12000 },
   "loadingDays": 2,
-  "lostRetryDays": 5
+  "lostRetryDays": 5,
+  "models": {
+    "bus": { "name": "Rambler Bus", "speedKmh": 56, "capacity": 30, "price": 12000, "runningCost": 1200, "cargo": ["passengers"], "stop": "bus" },
+    "van": { "name": "Courier Van", "speedKmh": 64, "capacity": 20, "price": 10000, "runningCost": 1000, "cargo": ["mail"], "stop": "bus" },
+    "truck": { "name": "Hauler Truck", "speedKmh": 48, "capacity": 20, "price": 15000, "runningCost": 1500, "cargo": ["coal", "grain", "wood", "food", "planks"], "stop": "truck" }
+  }
 }
