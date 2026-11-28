@@ -5,6 +5,8 @@ export interface HudHandlers {
   onGenerate: (seed: string, size: MapSize) => void;
   onNewRandom: (size: MapSize) => void;
   onSpeed: (speed: number) => void;
+  /** +1 turns the map clockwise, -1 anticlockwise. */
+  onRotate: (dir: 1 | -1) => void;
 }
 
 const SIZE_LABEL: Record<MapSize, string> = {
@@ -46,6 +48,10 @@ export class Hud {
         <span class="date" id="date"></span>
         <span class="speeds" role="group" aria-label="Game speed">
           ${SPEEDS.map((s) => `<button type="button" class="speed" data-speed="${s}">${s === 0 ? '❚❚' : `${s}x`}</button>`).join('')}
+        </span>
+        <span class="rotate" role="group" aria-label="Rotate map">
+          <button type="button" id="rot-left" aria-label="Rotate map anticlockwise">⟲</button>
+          <button type="button" id="rot-right" aria-label="Rotate map clockwise">⟳</button>
         </span>
         <span class="spent" id="spent"></span>
       </div>
@@ -91,6 +97,8 @@ export class Hud {
     root.querySelector('#new')!.addEventListener('click', () => handlers.onNewRandom(size()));
     this.sizeSelect.addEventListener('change', go);
     this.copyButton.addEventListener('click', () => void this.copyLink());
+    root.querySelector('#rot-left')!.addEventListener('click', () => handlers.onRotate(-1));
+    root.querySelector('#rot-right')!.addEventListener('click', () => handlers.onRotate(1));
     for (const b of this.speedButtons) {
       b.addEventListener('click', () => handlers.onSpeed(Number(b.dataset.speed)));
     }

@@ -8,11 +8,12 @@ import { generateMap } from './mapgen/generator.ts';
 import { randomSeedString } from './mapgen/rng.ts';
 import { DEFAULT_SETTINGS, Occupant, Terrain, WaterKind, type MapSize } from './mapgen/types.ts';
 import { Camera, type PointerTool } from './render/camera.ts';
-import { pickTile } from './render/iso.ts';
+import { pickTile, tileCenter } from './render/iso.ts';
 import { MapRenderer } from './render/mapRenderer.ts';
 import { Overlay } from './render/overlay.ts';
 import { PREVIEW_BAD, PREVIEW_OK } from './render/palette.ts';
 import { VehicleRenderer } from './render/vehicleRenderer.ts';
+import type { Rotation } from './render/view.ts';
 import { RoadOwner, TICKS_PER_DAY } from './sim/constants.ts';
 import type { ActionResult } from './sim/world.ts';
 import { World } from './sim/world.ts';
@@ -73,6 +74,8 @@ export class Game {
   private tapTile = -1;
   private routeEdit: RouteEdit | null = null;
   private readonly app: Application;
+  /** Which of the four sides the map is viewed from. */
+  rotation: Rotation = 0;
 
   constructor(app: Application, hud: HTMLElement, toolbar: HTMLElement, panel: HTMLElement) {
     this.app = app;
@@ -82,11 +85,18 @@ export class Game {
     this.camera = new Camera(this.renderer.root, app.canvas, () => (this.needsRender = true));
     this.camera.tool = this.pointerTool();
     this.camera.onTap = (x, y) => this.onTap(x, y);
+    this.camera.onTwist = (dir) => this.rotate(dir);
+    window.addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === 'q' || e.key === 'Q') this.rotate(-1);
+      if (e.key === 'e' || e.key === 'E') this.rotate(1);
+    });
 
     this.hud = new Hud(hud, {
       onGenerate: (seed, size) => this.newWorld(seed, size),
       onNewRandom: (size) => this.newWorld(randomSeedString(), size),
       onSpeed: (s) => this.setSpeed(s),
+      onRotate: (dir) => this.rotate(dir),
     });
     this.toolbar = new Toolbar(
       toolbar,
@@ -109,7 +119,8 @@ export class Game {
       const map = generateMap(seed, { ...DEFAULT_SETTINGS, size });
       const ms = performance.now() - t0;
       this.world = new World(map);
-      this.renderer.setWorld(this.world);
+      this.renderer.setWorld(this.world, this.rotation);
+      this.overlay.view = this.renderer.view;
       this.vehicles.clear();
       this.overlay.clear();
       this.routeEdit = null;
@@ -121,6 +132,7 @@ export class Game {
       url.searchParams.set('seed', seed);
       url.searchParams.set('size', size);
       window.history.replaceState(null, '', url);
+      this.updateRotationParam();
     } catch (err) {
       this.hud.showError(err instanceof Error ? err.message : String(err));
     }
@@ -144,7 +156,7 @@ export class Game {
       if (this.renderer.refreshDirty()) this.needsRender = true;
       const view = this.camera.viewRect();
       this.renderer.update(view, this.camera.currentZoom);
-      const busesVisible = this.vehicles.update(this.world, view);
+      const busesVisible = this.vehicles.update(this.world, this.renderer.view, view);
       this.hud.setStatus(this.world.day, this.world.spent);
       if (this.needsRender || (busesVisible && this.speed > 0)) {
         this.app.render();
@@ -153,6 +165,38 @@ export class Game {
     }
     requestAnimationFrame(this.frame);
   };
+
+  /** Turns the map 90° (dir +1 = clockwise), keeping the same spot in the middle of the screen. */
+  rotate(dir: 1 | -1): void {
+    if (!this.world) return;
+    const { map } = this.world;
+    const c = this.camera.center();
+    let anchor = this.pick(this.camera.toScreenX(c.x), this.camera.toScreenY(c.y));
+    if (anchor < 0) anchor = Math.floor(map.height / 2) * map.width + Math.floor(map.width / 2);
+    const ax = anchor % map.width;
+    const ay = (anchor - ax) / map.width;
+
+    this.rotation = (((this.rotation + dir) % 4) + 4) % 4 as Rotation;
+    this.renderer.setWorld(this.world, this.rotation);
+    this.overlay.view = this.renderer.view;
+    this.overlay.clear();
+    this.dragPath = [];
+    this.tapTile = -1;
+    if (this.routeEdit) this.showRouteEditor();
+
+    const { u, v } = this.renderer.view.toView(ax, ay);
+    const p = tileCenter(u, v, map.heights[anchor]!);
+    this.camera.centerOn(p.px, p.py);
+    this.updateRotationParam();
+    this.needsRender = true;
+  }
+
+  private updateRotationParam(): void {
+    const url = new URL(window.location.href);
+    if (this.rotation === 0) url.searchParams.delete('rot');
+    else url.searchParams.set('rot', String(this.rotation));
+    window.history.replaceState(null, '', url);
+  }
 
   private setSpeed(speed: number): void {
     this.speed = speed;
@@ -174,7 +218,7 @@ export class Game {
 
   private pick(sx: number, sy: number): number {
     const w = this.camera.toWorld(sx, sy);
-    return pickTile(this.world.map, w.x, w.y);
+    return pickTile(this.world.map, this.renderer.view, w.x, w.y);
   }
 
   private pointerTool(): PointerTool {

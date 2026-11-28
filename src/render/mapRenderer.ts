@@ -20,6 +20,7 @@ import {
   tileHash,
   tileTop,
 } from './iso.ts';
+import { MapView, type Rotation } from './view.ts';
 import {
   BRIDGE_COLOR,
   DEPOT_COLOR,
@@ -71,6 +72,7 @@ export class MapRenderer {
   private townLabels: Text[] = [];
   private industryLabels: Text[] = [];
   private world: World | null = null;
+  private mapView = new MapView(1, 1);
 
   /** World-space bounding box of the whole map. */
   bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
@@ -80,12 +82,18 @@ export class MapRenderer {
     this.root.addChild(this.terrainLayer, this.overlayLayer, this.labelLayer);
   }
 
-  setWorld(world: World): void {
+  /** The current rotation and coordinate conversions. */
+  get view(): MapView {
+    return this.mapView;
+  }
+
+  setWorld(world: World, rotation: Rotation = 0): void {
     this.clear();
     this.world = world;
     const { map } = world;
-    this.chunksX = Math.ceil(map.width / CHUNK);
-    const chunksY = Math.ceil(map.height / CHUNK);
+    this.mapView = new MapView(map.width, map.height, rotation);
+    this.chunksX = Math.ceil(this.mapView.viewWidth / CHUNK);
+    const chunksY = Math.ceil(this.mapView.viewHeight / CHUNK);
     for (let cy = 0; cy < chunksY; cy++) {
       for (let cx = 0; cx < this.chunksX; cx++) {
         const chunk = this.buildChunk(world, cx, cy);
@@ -112,7 +120,8 @@ export class MapRenderer {
     for (const i of world.dirty) {
       const x = i % width;
       const y = (i - x) / width;
-      keys.add(Math.floor(y / CHUNK) * this.chunksX + Math.floor(x / CHUNK));
+      const { u, v } = this.mapView.toView(x, y);
+      keys.add(Math.floor(v / CHUNK) * this.chunksX + Math.floor(u / CHUNK));
     }
     world.dirty.clear();
     for (const k of keys) {
@@ -156,12 +165,14 @@ export class MapRenderer {
 
   private buildChunk(world: World, cx: number, cy: number): Chunk {
     const { map } = world;
+    const view = this.mapView;
     const g = new Graphics();
     g.zIndex = cx + cy;
+    // Chunks are laid out in view space so drawing order stays back-to-front.
     const x0 = cx * CHUNK;
     const y0 = cy * CHUNK;
-    const x1 = Math.min(map.width, x0 + CHUNK);
-    const y1 = Math.min(map.height, y0 + CHUNK);
+    const x1 = Math.min(view.viewWidth, x0 + CHUNK);
+    const y1 = Math.min(view.viewHeight, y0 + CHUNK);
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -169,10 +180,11 @@ export class MapRenderer {
 
     // Back-to-front: walk the diagonals (x + y ascending).
     for (let s = x0 + y0; s <= x1 - 1 + (y1 - 1); s++) {
-      for (let x = Math.max(x0, s - (y1 - 1)); x <= Math.min(x1 - 1, s - y0); x++) {
-        const y = s - x;
-        this.drawTile(g, world, x, y);
-        const { px, py } = tileTop(x, y, map.heights[y * map.width + x]!);
+      for (let u = Math.max(x0, s - (y1 - 1)); u <= Math.min(x1 - 1, s - y0); u++) {
+        const v = s - u;
+        const { x, y } = view.fromView(u, v);
+        this.drawTile(g, world, x, y, u, v);
+        const { px, py } = tileTop(u, v, map.heights[y * map.width + x]!);
         minX = Math.min(minX, px - TILE_W / 2);
         maxX = Math.max(maxX, px + TILE_W / 2);
         minY = Math.min(minY, py - 24);
@@ -182,15 +194,17 @@ export class MapRenderer {
     return { gfx: g, cx, cy, minX, minY, maxX, maxY };
   }
 
-  private drawTile(g: Graphics, world: World, x: number, y: number): void {
+  /** Draws tile (x, y), which sits at view position (u, v). */
+  private drawTile(g: Graphics, world: World, x: number, y: number, u: number, v: number): void {
     const { map } = world;
+    const view = this.mapView;
     const { width } = map;
     const i = y * width + x;
     const h = map.heights[i]!;
     const terrain = map.terrain[i]!;
     const water = map.water[i]!;
-    const road = world.roads[i]!;
-    const { px, py } = tileTop(x, y, h);
+    const road = view.maskToView(world.roads[i]!);
+    const { px, py } = tileTop(u, v, h);
     const hw = TILE_W / 2;
     const hh = TILE_H / 2;
 
@@ -202,8 +216,11 @@ export class MapRenderer {
     if ((x + y) % 2 === 0) top = shade(top, 1.03);
 
     // Side faces down to lower neighbours (or to the base at the map edge).
-    const hRight = x + 1 < map.width ? map.heights[i + 1]! : -1;
-    const hLeft = y + 1 < map.height ? map.heights[i + width]! : -1;
+    // The visible side faces point at the view neighbours (u + 1, v) and (u, v + 1).
+    const right = u + 1 < view.viewWidth ? view.fromView(u + 1, v) : null;
+    const left = v + 1 < view.viewHeight ? view.fromView(u, v + 1) : null;
+    const hRight = right ? map.heights[right.y * width + right.x]! : -1;
+    const hLeft = left ? map.heights[left.y * width + left.x]! : -1;
     const base = water !== WaterKind.None ? WATER_COLORS[water]! : 0x8a6a45;
     if (hRight < h) {
       const d = (h - hRight) * HEIGHT_STEP;
@@ -253,20 +270,32 @@ export class MapRenderer {
 
     if (map.occupant[i] === Occupant.Town) {
       const r = tileHash(x, y);
-      const c = tileCenter(x, y, h);
+      const c = tileCenter(u, v, h);
       const w = 7 + (r % 3);
       drawBlock(g, c.px, c.py + 2, w, w / 2, 6 + ((r >>> 3) % 8), HOUSE_WALL, HOUSE_ROOF);
     }
 
     if (map.occupant[i] === Occupant.Industry) {
       const ind = map.industries[map.occupantId[i]!];
-      // Draw the 2x2 building once, from its front-most tile.
-      if (ind && x === ind.x + 1 && y === ind.y + 1) {
+      if (ind) {
+        // Draw the 2x2 building once, from its front-most tile in the current view.
         let bh = 0;
+        let minU = Infinity;
+        let minV = Infinity;
+        let maxU = -Infinity;
+        let maxV = -Infinity;
         for (let dy = 0; dy < 2; dy++) {
-          for (let dx = 0; dx < 2; dx++) bh = Math.max(bh, map.heights[(ind.y + dy) * width + ind.x + dx]!);
+          for (let dx = 0; dx < 2; dx++) {
+            bh = Math.max(bh, map.heights[(ind.y + dy) * width + ind.x + dx]!);
+            const p = view.toView(ind.x + dx, ind.y + dy);
+            minU = Math.min(minU, p.u);
+            minV = Math.min(minV, p.v);
+            maxU = Math.max(maxU, p.u);
+            maxV = Math.max(maxV, p.v);
+          }
         }
-        const t = tileTop(ind.x, ind.y, bh);
+        if (u !== maxU || v !== maxV) return;
+        const t = tileTop(minU, minV, bh);
         const color = industryColor(ind.type);
         drawBlock(g, t.px, t.py + TILE_H, TILE_W * 0.8, TILE_H * 0.8, 14, shade(color, 1.1), color);
         drawBlock(g, t.px + 6, t.py + TILE_H - 10, 4, 2, 12, 0x6b6b6b, 0x555555);
@@ -305,7 +334,8 @@ export class MapRenderer {
     const { map } = world;
     for (const town of map.towns) {
       const h = map.heights[town.y * map.width + town.x]!;
-      const c = tileCenter(town.x, town.y, h);
+      const tv = this.mapView.toView(town.x, town.y);
+      const c = tileCenter(tv.u, tv.v, h);
       const label = new Text({
         text: town.name,
         style: {
@@ -323,7 +353,8 @@ export class MapRenderer {
     }
     for (const ind of map.industries) {
       const h = map.heights[ind.y * map.width + ind.x]!;
-      const top = tileTop(ind.x, ind.y, h);
+      const p = this.mapView.pointToView(ind.x + 1, ind.y + 1);
+      const top = tileTop(p.u - 1, p.v - 1, h);
       const label = new Text({
         text: industryName(ind.type),
         style: {

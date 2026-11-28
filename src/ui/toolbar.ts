@@ -11,7 +11,7 @@ const TOOLS: Array<{ id: Tool; label: string; icon: string }> = [
 ];
 
 const HINTS: Record<Tool, string> = {
-  view: 'Drag to move · pinch to zoom · tap to inspect',
+  view: 'Drag to move · pinch to zoom · twist or ⟲ ⟳ to rotate · tap to inspect',
   road: 'Drag along the tiles to build a road · two fingers to move',
   stop: 'Tap a straight piece of road to place a bus stop',
   depot: 'Tap an empty tile next to a road to build a depot',

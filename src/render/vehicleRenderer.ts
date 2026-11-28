@@ -5,6 +5,7 @@ import type { Bus } from '../sim/vehicles.ts';
 import type { World } from '../sim/world.ts';
 import { HEIGHT_STEP, TILE_H, TILE_W, drawBlock } from './iso.ts';
 import type { ViewRect } from './mapRenderer.ts';
+import type { MapView } from './view.ts';
 import { BUS_BODY, BUS_ROOF } from './palette.ts';
 
 /** How far to the right of the centre line buses drive, in tiles. */
@@ -15,7 +16,7 @@ export class VehicleRenderer {
   private sprites = new Map<number, Graphics>();
 
   /** Positions all buses. Returns true if any bus is on screen. */
-  update(world: World, view: ViewRect): boolean {
+  update(world: World, mapView: MapView, view: ViewRect): boolean {
     const alive = new Set<number>();
     let anyVisible = false;
     for (const bus of world.buses) {
@@ -27,7 +28,7 @@ export class VehicleRenderer {
         this.layer.addChild(g);
         this.sprites.set(bus.id, g);
       }
-      const p = busPosition(world, bus);
+      const p = busPosition(world, mapView, bus);
       g.position.set(p.x, p.y);
       g.zIndex = p.depth;
       const visible =
@@ -56,7 +57,11 @@ export class VehicleRenderer {
 }
 
 /** Screen position of a bus: between two tile centres, shifted into the right-hand lane. */
-export function busPosition(world: World, bus: Bus): { x: number; y: number; depth: number } {
+export function busPosition(
+  world: World,
+  mapView: MapView,
+  bus: Bus,
+): { x: number; y: number; depth: number } {
   const { width } = world.map;
   const a = bus.path[bus.pathIndex] ?? bus.tile;
   const b = bus.state === 'driving' ? (bus.path[bus.pathIndex + 1] ?? a) : a;
@@ -79,9 +84,10 @@ export function busPosition(world: World, bus: Bus): { x: number; y: number; dep
     tx += -info.dy * LANE_OFFSET;
     ty += info.dx * LANE_OFFSET;
   }
+  const { u, v } = mapView.pointToView(tx, ty);
   return {
-    x: (tx - ty) * (TILE_W / 2),
-    y: (tx + ty) * (TILE_H / 2) - h * HEIGHT_STEP,
-    depth: tx + ty,
+    x: (u - v) * (TILE_W / 2),
+    y: (u + v) * (TILE_H / 2) - h * HEIGHT_STEP,
+    depth: u + v,
   };
 }

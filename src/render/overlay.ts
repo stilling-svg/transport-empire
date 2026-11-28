@@ -4,9 +4,12 @@ import type { RoadPlan } from '../sim/roads.ts';
 import type { World } from '../sim/world.ts';
 import { TILE_H, TILE_W, tileTop } from './iso.ts';
 import { HIGHLIGHT, PREVIEW_BAD, PREVIEW_OK } from './palette.ts';
+import { MapView } from './view.ts';
 
 export class Overlay {
   readonly gfx = new Graphics();
+  /** Set by the game whenever the map or its rotation changes. */
+  view = new MapView(1, 1);
 
   clear(): void {
     this.gfx.clear();
@@ -45,6 +48,7 @@ export class Overlay {
     const { width } = world.map;
     const x = i % width;
     const y = (i - x) / width;
-    return tileTop(x, y, world.map.heights[i]!);
+    const { u, v } = this.view.toView(x, y);
+    return tileTop(u, v, world.map.heights[i]!);
   }
 }

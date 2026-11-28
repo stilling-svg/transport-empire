@@ -213,6 +213,9 @@ Lån optages og tilbagebetales i trin af $10.000.
   for at se info om et felt, et køretøj eller en by.
 - **Byggetilstande:** træk med fingeren for at bygge. En gennemsigtig
   forhåndsvisning viser prisen, før man slipper. Panorering sker med to fingre.
+- **Rotation:** kortet kan drejes 90° ad gangen, så det ses fra fire sider. Det sker
+  med knapperne ⟲ ⟳ i top-baren, ved at dreje to fingre på skærmen eller med
+  tasterne Q/E. Rotationen ændrer kun visningen, ikke selve spillet.
 - **Fortryd** (Undo) af de seneste 10 byggehandlinger. Fortryd refunderer hele
   prisen.
 - **Top-bar:** penge, dato, hastighed (pause/1x/2x/4x) og fremskridt mod målet.

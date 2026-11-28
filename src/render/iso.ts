@@ -66,16 +66,18 @@ export function drawBlock(
 /** Inverse projection: the tile under a world point, honouring tile heights. -1 if none. */
 export function pickTile(
   map: { width: number; height: number; maxHeight: number; heights: Uint8Array },
+  view: { viewWidth: number; viewHeight: number; fromView(u: number, v: number): { x: number; y: number } },
   wx: number,
   wy: number,
 ): number {
   const a = wx / (TILE_W / 2);
   for (let h = map.maxHeight; h >= 0; h--) {
     const b = (wy + h * HEIGHT_STEP) / (TILE_H / 2);
-    const tx = Math.floor((a + b) / 2);
-    const ty = Math.floor((b - a) / 2);
-    if (tx < 0 || ty < 0 || tx >= map.width || ty >= map.height) continue;
-    const i = ty * map.width + tx;
+    const u = Math.floor((a + b) / 2);
+    const v = Math.floor((b - a) / 2);
+    if (u < 0 || v < 0 || u >= view.viewWidth || v >= view.viewHeight) continue;
+    const { x, y } = view.fromView(u, v);
+    const i = y * map.width + x;
     if (map.heights[i] === h) return i;
   }
   return -1;

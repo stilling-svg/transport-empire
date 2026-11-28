@@ -30,6 +30,8 @@ async function start(): Promise<void> {
   );
 
   const params = new URLSearchParams(window.location.search);
+  const rot = Number(params.get('rot'));
+  if (rot === 1 || rot === 2 || rot === 3) game.rotation = rot;
   const sizeParam = params.get('size');
   const size: MapSize = sizeParam && sizeParam in MAP_DIMENSIONS ? (sizeParam as MapSize) : 'medium';
   game.newWorld(params.get('seed') || randomSeedString(), size);

@@ -4,6 +4,7 @@
  * View mode:  one finger / mouse drag pans, a short tap inspects.
  * Build mode: one finger / left mouse drives the active tool,
  *             two fingers (or right mouse drag) pan, pinch zooms.
+ * Twisting two fingers rotates the map in 90° steps.
  * The mouse wheel always zooms around the cursor.
  */
 import type { Container } from 'pixi.js';
@@ -24,6 +25,8 @@ type Mode = 'none' | 'pan' | 'tool' | 'pinch';
 type Pt = { x: number; y: number };
 
 const TAP_DISTANCE = 10;
+/** How far (radians) two fingers must twist before the map turns 90°. */
+const TWIST_THRESHOLD = 0.6;
 const TAP_TIME = 350;
 
 export class Camera {
@@ -33,6 +36,7 @@ export class Camera {
   private mode: Mode = 'none';
   private pinchDistance = 0;
   private pinchMid: Pt = { x: 0, y: 0 };
+  private twistStart = 0;
   private downAt: Pt = { x: 0, y: 0 };
   private downTime = 0;
   private moved = false;
@@ -41,6 +45,8 @@ export class Camera {
   private readonly onChange: () => void;
   tool: PointerTool | null = null;
   onTap: ((x: number, y: number) => void) | null = null;
+  /** Called with +1 (clockwise) or -1 when two fingers twist far enough. */
+  onTwist: ((dir: 1 | -1) => void) | null = null;
 
   constructor(target: Container, element: HTMLElement, onChange: () => void) {
     this.target = target;
@@ -80,6 +86,29 @@ export class Camera {
     this.target.position.set(
       w / 2 - ((bounds.minX + bounds.maxX) / 2) * this.zoom,
       h / 2 - ((bounds.minY + bounds.maxY) / 2) * this.zoom,
+    );
+    this.onChange();
+  }
+
+  /** World x/y back to screen pixels. */
+  toScreenX(wx: number): number {
+    return wx * this.zoom + this.target.position.x;
+  }
+
+  toScreenY(wy: number): number {
+    return wy * this.zoom + this.target.position.y;
+  }
+
+  /** The world point currently in the middle of the screen. */
+  center(): Pt {
+    return this.toWorld(this.element.clientWidth / 2, this.element.clientHeight / 2);
+  }
+
+  /** Moves the camera so the world point (wx, wy) is in the middle of the screen. */
+  centerOn(wx: number, wy: number): void {
+    this.target.position.set(
+      this.element.clientWidth / 2 - wx * this.zoom,
+      this.element.clientHeight / 2 - wy * this.zoom,
     );
     this.onChange();
   }
@@ -155,6 +184,13 @@ export class Camera {
       if (this.pinchDistance > 0) this.zoomAt(mid.x, mid.y, d / this.pinchDistance);
       this.pinchDistance = d;
       this.pinchMid = mid;
+      let twist = Math.atan2(b.y - a.y, b.x - a.x) - this.twistStart;
+      if (twist > Math.PI) twist -= 2 * Math.PI;
+      if (twist < -Math.PI) twist += 2 * Math.PI;
+      if (Math.abs(twist) > TWIST_THRESHOLD) {
+        this.twistStart = Math.atan2(b.y - a.y, b.x - a.x);
+        this.onTwist?.(twist > 0 ? 1 : -1);
+      }
       this.onChange();
     }
   };
@@ -190,6 +226,7 @@ export class Camera {
     const [a, b] = [...this.pointers.values()] as [Pt, Pt];
     this.pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
     this.pinchMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    this.twistStart = Math.atan2(b.y - a.y, b.x - a.x);
   }
 
   private onWheel = (e: WheelEvent): void => {

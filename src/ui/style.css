@@ -117,6 +117,17 @@ button:active {
   font-weight: 700;
 }
 
+.rotate {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.rotate button {
+  min-width: 44px;
+  padding: 0 8px;
+  font-size: 20px;
+}
+
 .spent {
   font-size: 13px;
   color: #b9c4cc;
