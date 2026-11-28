@@ -94,7 +94,7 @@ Et kort er spilbart, når alle reglerne er opfyldt:
 | Fødevarefabrik | Fødevarer | Korn | Omdanner 1:1 |
 | Skov | Træ | – | 50 t |
 | Savværk | Planker | Træ | Omdanner 1:1 |
-| By | Passagerer, Post | Passagerer, Post, Fødevarer, Planker | Afhænger af indbyggertal |
+| By | Passagerer, Post | Passagerer, Post, Fødevarer, Planker | Passagerer: indbyggere / 8, post: indbyggere / 20 |
 
 **Produktionsændringer:** Hver måned vurderes hver kilde. Transporteres mindst
 60 % af produktionen, er der en chance for, at produktionen stiger. Under 20 %
@@ -124,6 +124,11 @@ Byer bygger nye huse og veje automatisk. De river aldrig spillerens anlæg ned.
 **Opland:** En station kan kun hente fra og levere til industrier og huse
 inden for sit opland.
 
+**To slags vejstop:** busstoppesteder tager passagerer og post (busser og
+postvogne); læssepladser tager gods (lastbiler). Gods har ingen bestemt
+destination: det betales ved ethvert stop, hvor varen modtages. Industrier og
+byer lægger kun gods ved stop, som et køretøj med den vare har i sin rute.
+
 ### 5.2 Køretøjer (fiktive navne)
 
 | Køretøj | Type | Fra år | Kapacitet | Fart | Pris | Drift/år |
@@ -152,6 +157,9 @@ Der er ingen nedbrud i MVP.
   før det kører ind på den. Der er ingen signaler, som spilleren placerer selv.
   Rigtige signaler kommer efter v1.0.
 - Vejkøretøjer kan overhale og møde hinanden. De kører ikke gennem hinanden.
+  (Milepæl 3: køretøjer holder kø bag hinanden i samme vognbane; overhaling kommer
+  senere. Højst 2 køretøjer læsser ved et stop ad gangen.)
+- Køretøjer kan sælges for 75 % af købsprisen.
 
 ## 6. Økonomi
 
@@ -164,6 +172,8 @@ betaling = basistakst × mængde × afstand × tidsfaktor × tilskud × sværhed
   med høj følsomhed rammer gulvet på 0,25 efter 3 × grænsen, varer med lav
   følsomhed efter 6 × grænsen.
 - **tilskud** = 1,0 normalt, 1,5 eller 2,0 på en aktiv tilskudsrute.
+- **betalingsfaktor** = 0,3 (balancetal i `src/data/economy.json`), så en lastbil- eller
+  busrute tjener sig hjem på 1–5 år.
 
 ### 6.2 Udgifter
 Anlæg og køretøjer betales ved køb. Driften af køretøjer trækkes månedligt.

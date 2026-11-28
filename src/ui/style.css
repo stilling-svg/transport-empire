@@ -128,9 +128,14 @@ button:active {
   font-size: 20px;
 }
 
-.spent {
-  font-size: 13px;
-  color: #b9c4cc;
+.money {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #8ee59b;
+}
+
+.money.negative {
+  color: #ff8a80;
 }
 
 .mapbar {
@@ -238,7 +243,7 @@ button:disabled {
 
 .tools {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 4px;
   background: rgba(20, 30, 38, 0.92);
   border-radius: 14px;
@@ -252,8 +257,8 @@ button:disabled {
   justify-content: center;
   gap: 2px;
   min-height: 56px;
-  padding: 4px 2px;
-  font-size: 12px;
+  padding: 4px 1px;
+  font-size: 11px;
   border: none;
   background: transparent;
 }

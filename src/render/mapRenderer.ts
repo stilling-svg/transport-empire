@@ -30,6 +30,7 @@ import {
   STOP_COLOR,
   TERRAIN_COLORS,
   TREE_COLOR,
+  TRUCK_STOP_COLOR,
   WATER_COLORS,
   industryColor,
   industryName,
@@ -240,7 +241,13 @@ export class MapRenderer {
     if (road !== 0) {
       this.drawRoad(g, px, py, road, water === WaterKind.River);
       if (world.stopAt[i]! >= 0) {
-        drawBlock(g, px + 7, py + hh - 1, 2.5, 1.25, 9, STOP_COLOR, shade(STOP_COLOR, 1.2));
+        const stop = world.stops.get(world.stopAt[i]!);
+        if (stop?.kind === 'truck') {
+          // Loading bay: a low shelter on the roadside.
+          drawBlock(g, px + 7, py + hh - 1, 4, 2, 5, TRUCK_STOP_COLOR, shade(TRUCK_STOP_COLOR, 1.25));
+        } else {
+          drawBlock(g, px + 7, py + hh - 1, 2.5, 1.25, 9, STOP_COLOR, shade(STOP_COLOR, 1.2));
+        }
       }
       if (world.depotAt[i]! >= 0) {
         drawBlock(g, px, py + hh, hw * 0.75, hh * 0.75, 12, DEPOT_COLOR, shade(DEPOT_COLOR, 1.25));

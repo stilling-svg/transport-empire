@@ -3,7 +3,6 @@
  * tools, tapping, panels, the game loop and time controls.
  */
 import type { Application } from 'pixi.js';
-import industries from './data/industries.json' with { type: 'json' };
 import { generateMap } from './mapgen/generator.ts';
 import { randomSeedString } from './mapgen/rng.ts';
 import { DEFAULT_SETTINGS, Occupant, Terrain, WaterKind, type MapSize } from './mapgen/types.ts';
@@ -14,7 +13,12 @@ import { Overlay } from './render/overlay.ts';
 import { PREVIEW_BAD, PREVIEW_OK } from './render/palette.ts';
 import { VehicleRenderer } from './render/vehicleRenderer.ts';
 import type { Rotation } from './render/view.ts';
+import { cargoInfo, type CargoId } from './sim/cargo.ts';
 import { RoadOwner, TICKS_PER_DAY } from './sim/constants.ts';
+import { industryInfo, stopAccepts, stopSupplies } from './sim/economy.ts';
+import { LEDGER_KEYS, LEDGER_LABELS, ledgerTotal, type Ledger } from './sim/finance.ts';
+import type { ModelId, Order } from './sim/types.ts';
+import { MODELS } from './sim/vehicles.ts';
 import type { ActionResult } from './sim/world.ts';
 import { World } from './sim/world.ts';
 import { extendPath } from './ui/dragPath.ts';
@@ -35,26 +39,22 @@ const WATER_NAMES: Record<number, string> = {
   [WaterKind.Lake]: 'Lake',
   [WaterKind.River]: 'River',
 };
-const CARGO_NAMES: Record<string, string> = {
-  coal: 'Coal',
-  grain: 'Grain',
-  food: 'Food',
-  wood: 'Wood',
-  planks: 'Planks',
-};
-const BUS_STATE: Record<string, string> = {
-  idle: 'waiting in the depot',
+const VEHICLE_STATE: Record<string, string> = {
+  idle: 'in the depot',
   driving: 'driving',
   loading: 'at a stop',
   lost: 'cannot find a way',
 };
+const cargoName = (c: CargoId): string => cargoInfo(c).name;
+const amount = (c: CargoId, n: number): string => `${Math.round(n)} ${cargoInfo(c).unit}`;
+const signed = (n: number): string => (n > 0 ? `+${formatMoney(n)}` : formatMoney(n));
 
 /** Max simulation ticks per frame, so a slow frame cannot snowball. */
 const MAX_TICKS_PER_FRAME = 240;
 
 interface RouteEdit {
-  busId: number;
-  stops: number[];
+  vehicleId: number;
+  orders: Order[];
 }
 
 export class Game {
@@ -73,6 +73,9 @@ export class Game {
   private dragPath: number[] = [];
   private tapTile = -1;
   private routeEdit: RouteEdit | null = null;
+  /** Redraws the open panel with fresh numbers (called about once a second). */
+  private panelRefresh: (() => void) | null = null;
+  private frameCount = 0;
   private readonly app: Application;
   /** Which of the four sides the map is viewed from. */
   rotation: Rotation = 0;
@@ -97,6 +100,7 @@ export class Game {
       onNewRandom: (size) => this.newWorld(randomSeedString(), size),
       onSpeed: (s) => this.setSpeed(s),
       onRotate: (dir) => this.rotate(dir),
+      onMoney: () => this.showFinances(),
     });
     this.toolbar = new Toolbar(
       toolbar,
@@ -157,7 +161,8 @@ export class Game {
       const view = this.camera.viewRect();
       this.renderer.update(view, this.camera.currentZoom);
       const busesVisible = this.vehicles.update(this.world, this.renderer.view, view);
-      this.hud.setStatus(this.world.day, this.world.spent);
+      this.hud.setStatus(this.world.day, this.world.money);
+      if (++this.frameCount % 30 === 0 && this.panelRefresh && this.panel.isOpen) this.panelRefresh();
       if (this.needsRender || (busesVisible && this.speed > 0)) {
         this.app.render();
         this.needsRender = false;
@@ -248,7 +253,8 @@ export class Game {
         let result: ActionResult | null = null;
         if (tool === 'road') result = this.world.buildRoad(this.dragPath);
         else if (tool === 'demolish' && this.dragPath.length > 0) result = this.world.demolish(this.dragPath);
-        else if (tool === 'stop' && this.tapTile >= 0) result = this.world.placeStop(this.tapTile);
+        else if (tool === 'busstop' && this.tapTile >= 0) result = this.world.placeStop(this.tapTile, 'bus');
+        else if (tool === 'truckstop' && this.tapTile >= 0) result = this.world.placeStop(this.tapTile, 'truck');
         else if (tool === 'depot' && this.tapTile >= 0) result = this.world.placeDepot(this.tapTile);
         if (result) this.report(result, tool);
         this.dragPath = [];
@@ -290,7 +296,14 @@ export class Game {
 
   private report(result: ActionResult, tool: Tool): void {
     if (result.ok) {
-      const what = { road: 'Road built', stop: 'Bus stop built', depot: 'Depot built', demolish: 'Removed', view: '' }[tool];
+      const what = {
+        road: 'Road built',
+        busstop: 'Bus stop built',
+        truckstop: 'Loading bay built',
+        depot: 'Depot built',
+        demolish: 'Removed',
+        view: '',
+      }[tool];
       const cost = result.cost > 0 ? ` for ${formatMoney(result.cost)}` : '';
       this.toolbar.showHint(`${what}${cost}${result.reason ? ` · ${result.reason}` : ''}`, 'ok', true);
     } else {
@@ -310,23 +323,29 @@ export class Game {
   }
 
   // -------------------------------------------------------------------------
-  // Tapping, info panels and routes
+  // Tapping and info panels
 
   private onTap(sx: number, sy: number): void {
     const tile = this.pick(sx, sy);
     if (this.routeEdit) {
-      const stop = tile >= 0 ? this.world.stopAt[tile]! : -1;
-      if (stop >= 0) {
-        this.routeEdit.stops.push(stop);
-        this.showRouteEditor();
-      } else this.toolbar.showHint('Tap a bus stop to add it to the route', 'error', true);
+      this.addRouteStop(tile);
       return;
     }
     if (tile < 0) {
-      this.panel.hide();
+      this.closePanel();
       return;
     }
     this.showInfo(tile);
+  }
+
+  private showPanel(content: Parameters<Panel['show']>[0], refresh: (() => void) | null = null): void {
+    this.panelRefresh = refresh;
+    this.panel.show(content);
+  }
+
+  private closePanel(): void {
+    this.panelRefresh = null;
+    this.panel.hide();
   }
 
   private showInfo(tile: number): void {
@@ -342,23 +361,11 @@ export class Game {
     }
     const stopId = world.stopAt[tile]!;
     if (stopId >= 0) {
-      const stop = world.stops.get(stopId)!;
-      const calling = world.buses.filter((b) => b.route.includes(stopId)).length;
-      this.panel.show({
-        title: stop.name,
-        lines: ['Bus stop', `Buses calling here: ${calling}`],
-      });
+      this.showStop(stopId);
       return;
     }
     if (map.occupant[tile] === Occupant.Industry) {
-      const ind = map.industries[map.occupantId[tile]!]!;
-      const info = industries[ind.type] as { name: string; produces: string[]; accepts: string[] };
-      const produces = info.produces.map((c) => CARGO_NAMES[c] ?? c).join(', ');
-      const accepts = info.accepts.map((c) => CARGO_NAMES[c] ?? c).join(', ');
-      this.panel.show({
-        title: info.name,
-        lines: [produces ? `Produces: ${produces}` : '', accepts ? `Accepts: ${accepts}` : ''].filter(Boolean),
-      });
+      this.showIndustry(map.occupantId[tile]!);
       return;
     }
     const town =
@@ -370,83 +377,220 @@ export class Game {
             )
           : undefined;
     if (town) {
-      this.panel.show({
+      this.showPanel({
         title: town.name,
-        lines: [`Population ${town.population.toLocaleString('en-US')}`, 'Town streets are free to use'],
+        lines: [
+          `Population ${town.population.toLocaleString('en-US')}`,
+          'Makes passengers and mail · wants food and planks',
+          'Town streets are free to use',
+        ],
       });
       return;
     }
     const water = map.water[tile]!;
     const lines = [`Height ${map.heights[tile]}`];
     if (world.roads[tile] !== 0) lines.push(water === WaterKind.River ? 'Road bridge' : 'Road');
-    this.panel.show({
+    this.showPanel({
       title: water !== WaterKind.None ? WATER_NAMES[water]! : TERRAIN_NAMES[map.terrain[tile]!]!,
       lines,
     });
   }
 
-  private showDepot(depotId: number): void {
-    const buses = this.world.buses.filter((b) => b.depotId === depotId);
-    const lines =
-      buses.length === 0
-        ? ['No buses yet. Buy one, then tap the stops it should visit.']
-        : buses.map((b) => `${b.name}: ${BUS_STATE[b.state]} · ${b.route.length} stops`);
-    this.panel.show({
-      title: 'Bus depot',
-      lines,
-      actions: [
+  private showStop(stopId: number): void {
+    const render = (): void => {
+      const stop = this.world.stops.get(stopId);
+      if (!stop) {
+        this.closePanel();
+        return;
+      }
+      const supplies = stopSupplies(this.world, stop);
+      const accepts = (['passengers', 'mail', 'food', 'coal', 'grain', 'wood', 'planks'] as CargoId[]).filter((c) =>
+        stopAccepts(this.world, stop, c),
+      );
+      const waiting = (Object.entries(stop.waiting) as Array<[CargoId, number]>)
+        .filter(([, n]) => n > 0)
+        .map(([c, n]) => `${cargoName(c)} ${amount(c, n)}`);
+      const calling = this.world.vehicles.filter((v) => v.orders.some((o) => o.stopId === stopId)).length;
+      this.showPanel(
         {
-          label: 'Buy bus',
-          primary: true,
-          onClick: () => {
-            const bus = this.world.buyBus(depotId);
-            if (bus) this.startRouteEdit(bus.id);
-          },
+          title: stop.name,
+          lines: [
+            stop.kind === 'bus' ? 'Bus stop' : 'Loading bay',
+            `Waiting: ${waiting.length ? waiting.join(', ') : 'nothing'}`,
+            `Supplies: ${supplies.length ? supplies.map(cargoName).join(', ') : 'nothing nearby'}`,
+            `Accepts: ${accepts.length ? accepts.map(cargoName).join(', ') : 'nothing nearby'}`,
+            `Vehicles calling here: ${calling}`,
+          ],
         },
-        ...buses.slice(-3).map((b) => ({ label: `Route: ${b.name}`, onClick: () => this.startRouteEdit(b.id) })),
-      ],
+        render,
+      );
+    };
+    render();
+  }
+
+  private showIndustry(id: number): void {
+    const render = (): void => {
+      const ind = this.world.map.industries[id]!;
+      const info = industryInfo(ind.type);
+      const stats = this.world.industryStats[id]!;
+      const lines: string[] = [];
+      if (info.accepts.length) lines.push(`Accepts: ${info.accepts.map(cargoName).join(', ')}`);
+      for (const c of info.produces) {
+        const pct = stats.producedLastMonth > 0 ? Math.round((stats.transportedLastMonth / stats.producedLastMonth) * 100) : 0;
+        lines.push(
+          info.productionPerMonth > 0
+            ? `Produces ${amount(c, info.productionPerMonth)} ${cargoName(c).toLowerCase()} a month`
+            : `Makes ${cargoName(c).toLowerCase()} from what is delivered`,
+        );
+        lines.push(`Last month: ${amount(c, stats.producedLastMonth)} made, ${pct} % transported`);
+      }
+      this.showPanel({ title: info.name, lines }, render);
+    };
+    render();
+  }
+
+  // -------------------------------------------------------------------------
+  // Depots and vehicles
+
+  private showDepot(depotId: number): void {
+    const render = (): void => {
+      if (!this.world.depots.has(depotId)) {
+        this.closePanel();
+        return;
+      }
+      const list = this.world.vehicles.filter((v) => v.depotId === depotId);
+      const lines =
+        list.length === 0
+          ? ['No vehicles yet. Buy one, then tap the stops it should visit.']
+          : list.map(
+              (v) =>
+                `${v.name} (${cargoName(v.cargo)}): ${VEHICLE_STATE[v.state]} · ` +
+                `${v.load}/${v.capacity} · profit this year ${signed(v.profitThisYear)}`,
+            );
+      const buy = (model: ModelId): { label: string; onClick: () => void; primary?: boolean; disabled?: boolean } => ({
+        label: `${MODELS[model].name} ${formatMoney(MODELS[model].price)}`,
+        primary: model === 'bus',
+        disabled: this.world.money < MODELS[model].price,
+        onClick: () => (model === 'truck' ? this.chooseTruckCargo(depotId) : this.buy(depotId, model)),
+      });
+      this.showPanel(
+        {
+          title: 'Depot',
+          lines,
+          actions: [
+            buy('bus'),
+            buy('van'),
+            buy('truck'),
+            ...list.slice(-3).flatMap((v) => [
+              { label: `Route: ${v.name}`, onClick: () => this.startRouteEdit(v.id) },
+              {
+                label: `Sell ${v.name}`,
+                onClick: () => {
+                  const res = this.world.sellVehicle(v.id);
+                  this.toolbar.showHint(res.ok ? `Sold for ${formatMoney(-res.cost)}` : (res.reason ?? ''), res.ok ? 'ok' : 'error', true);
+                  render();
+                },
+              },
+            ]),
+          ],
+        },
+        render,
+      );
+    };
+    render();
+  }
+
+  private chooseTruckCargo(depotId: number): void {
+    this.showPanel({
+      title: 'What should the truck carry?',
+      lines: ['Coal, grain and wood come from industries; food and planks from factories.'],
+      actions: MODELS.truck.cargo.map((c) => ({ label: cargoName(c), onClick: () => this.buy(depotId, 'truck', c) })),
     });
   }
 
-  private startRouteEdit(busId: number): void {
+  private buy(depotId: number, model: ModelId, cargo?: CargoId): void {
+    const v = this.world.buyVehicle(depotId, model, cargo);
+    if (!v) {
+      this.toolbar.showHint('Not enough money', 'error', true);
+      return;
+    }
+    this.toolbar.showHint(`Bought ${v.name} for ${formatMoney(v.price)}`, 'ok', true);
+    this.startRouteEdit(v.id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Routes
+
+  private startRouteEdit(vehicleId: number): void {
     this.selectTool('view');
-    this.routeEdit = { busId, stops: [] };
+    this.routeEdit = { vehicleId, orders: [] };
+    this.showRouteEditor();
+  }
+
+  private addRouteStop(tile: number): void {
+    const edit = this.routeEdit!;
+    const v = this.world.vehicles.find((x) => x.id === edit.vehicleId);
+    const stopId = tile >= 0 ? this.world.stopAt[tile]! : -1;
+    if (!v || stopId < 0) {
+      this.toolbar.showHint('Tap a stop to add it to the route', 'error', true);
+      return;
+    }
+    if (!this.world.stopFits(stopId, v.model)) {
+      const need = MODELS[v.model].stop === 'bus' ? 'bus stops' : 'loading bays';
+      this.toolbar.showHint(`${v.name} can only use ${need}`, 'error', true);
+      return;
+    }
+    edit.orders.push({ stopId, fullLoad: false });
     this.showRouteEditor();
   }
 
   private showRouteEditor(): void {
     const edit = this.routeEdit;
     if (!edit) return;
-    edit.stops = edit.stops.filter((id) => this.world.stops.has(id));
-    const bus = this.world.buses.find((b) => b.id === edit.busId);
-    if (!bus) {
+    edit.orders = edit.orders.filter((o) => this.world.stops.has(o.stopId));
+    const v = this.world.vehicles.find((x) => x.id === edit.vehicleId);
+    if (!v) {
       this.cancelRouteEdit();
       return;
     }
-    const names = edit.stops.map((id) => this.world.stops.get(id)!.name);
-    this.panel.show({
-      title: `Route for ${bus.name}`,
+    const names = edit.orders.map((o) => `${this.world.stops.get(o.stopId)!.name}${o.fullLoad ? ' (full load)' : ''}`);
+    const last = edit.orders[edit.orders.length - 1];
+    const kind = MODELS[v.model].stop === 'bus' ? 'bus stops' : 'loading bays';
+    this.showPanel({
+      title: `Route for ${v.name}`,
       onClose: () => this.cancelRouteEdit(),
       lines: [
-        'Tap bus stops on the map in the order the bus should visit them.',
+        `Tap ${kind} on the map in the order ${v.name} should visit them.`,
         names.length ? names.join(' → ') : 'No stops chosen yet',
       ],
       actions: [
         {
           label: 'Start',
           primary: true,
-          disabled: edit.stops.length < 2,
+          disabled: edit.orders.length < 2,
           onClick: () => {
-            const res = this.world.setRoute(edit.busId, edit.stops);
+            const res = this.world.setRoute(edit.vehicleId, edit.orders);
             this.cancelRouteEdit();
-            this.toolbar.showHint(res.ok ? `${bus.name} is on its way` : (res.reason ?? 'Could not set route'), res.ok ? 'ok' : 'error', true);
+            this.toolbar.showHint(
+              res.ok ? `${v.name} is on its way` : (res.reason ?? 'Could not set route'),
+              res.ok ? 'ok' : 'error',
+              true,
+            );
+          },
+        },
+        {
+          label: last?.fullLoad ? 'No full load' : 'Wait for full load',
+          disabled: !last,
+          onClick: () => {
+            if (last) last.fullLoad = !last.fullLoad;
+            this.showRouteEditor();
           },
         },
         {
           label: 'Remove last',
-          disabled: edit.stops.length === 0,
+          disabled: edit.orders.length === 0,
           onClick: () => {
-            edit.stops.pop();
+            edit.orders.pop();
             this.showRouteEditor();
           },
         },
@@ -456,9 +600,9 @@ export class Game {
     this.overlay.clear();
     this.overlay.outline(
       this.world,
-      edit.stops.map((id) => this.world.stops.get(id)!.tile),
+      edit.orders.map((o) => this.world.stops.get(o.stopId)!.tile),
     );
-    this.toolbar.showHint('Choosing stops: tap them on the map', 'info');
+    this.toolbar.showHint(`Choosing ${kind}: tap them on the map`, 'info');
     this.needsRender = true;
   }
 
@@ -466,8 +610,54 @@ export class Game {
     if (!this.routeEdit) return;
     this.routeEdit = null;
     this.overlay.clear();
-    this.panel.hide();
+    this.closePanel();
     this.toolbar.setTool(this.toolbar.current);
     this.needsRender = true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Finances
+
+  private showFinances(): void {
+    const render = (): void => {
+      const f = this.world.finance;
+      const row = (key: (typeof LEDGER_KEYS)[number], l: Ledger): string =>
+        key === 'income' ? signed(l[key]) : l[key] === 0 ? '$0' : signed(-l[key]);
+      const lines = [
+        `Money ${formatMoney(f.money)} · loan ${formatMoney(f.loan)} of ${formatMoney(f.maxLoan)}`,
+        'This month · last month · this year',
+        ...LEDGER_KEYS.map(
+          (k) => `${LEDGER_LABELS[k]}: ${row(k, f.thisMonth)} · ${row(k, f.lastMonth)} · ${row(k, f.thisYear)}`,
+        ),
+        `Total: ${signed(ledgerTotal(f.thisMonth))} · ${signed(ledgerTotal(f.lastMonth))} · ${signed(ledgerTotal(f.thisYear))}`,
+      ];
+      this.showPanel(
+        {
+          title: 'Finances',
+          lines,
+          actions: [
+            {
+              label: `Borrow ${formatMoney(f.loanStep)}`,
+              disabled: f.loan + f.loanStep > f.maxLoan,
+              onClick: () => {
+                this.world.borrow();
+                render();
+              },
+            },
+            {
+              label: `Repay ${formatMoney(f.loanStep)}`,
+              disabled: f.loan < f.loanStep || f.money < f.loanStep,
+              onClick: () => {
+                this.world.repay();
+                render();
+              },
+            },
+          ],
+        },
+        render,
+      );
+    };
+    this.selectTool('view');
+    render();
   }
 }

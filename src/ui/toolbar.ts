@@ -1,11 +1,12 @@
 /** Bottom tool bar, within thumb reach, plus a one-line hint above it. */
 
-export type Tool = 'view' | 'road' | 'stop' | 'depot' | 'demolish';
+export type Tool = 'view' | 'road' | 'busstop' | 'truckstop' | 'depot' | 'demolish';
 
 const TOOLS: Array<{ id: Tool; label: string; icon: string }> = [
   { id: 'view', label: 'View', icon: '✋' },
   { id: 'road', label: 'Road', icon: '🛣' },
-  { id: 'stop', label: 'Stop', icon: '🚏' },
+  { id: 'busstop', label: 'Bus stop', icon: '🚏' },
+  { id: 'truckstop', label: 'Freight', icon: '📦' },
   { id: 'depot', label: 'Depot', icon: '🏠' },
   { id: 'demolish', label: 'Demolish', icon: '✖' },
 ];
@@ -13,7 +14,8 @@ const TOOLS: Array<{ id: Tool; label: string; icon: string }> = [
 const HINTS: Record<Tool, string> = {
   view: 'Drag to move · pinch to zoom · twist or ⟲ ⟳ to rotate · tap to inspect',
   road: 'Drag along the tiles to build a road · two fingers to move',
-  stop: 'Tap a straight piece of road to place a bus stop',
+  busstop: 'Bus stop for passengers and mail · tap a straight piece of road',
+  truckstop: 'Loading bay for freight · tap a straight piece of road near an industry or town',
   depot: 'Tap an empty tile next to a road to build a depot',
   demolish: 'Drag over your roads, stops or depots to remove them',
 };

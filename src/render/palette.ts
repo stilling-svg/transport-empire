@@ -4,6 +4,9 @@
  */
 import industries from '../data/industries.json' with { type: 'json' };
 import { Terrain, WaterKind, type IndustryType } from '../mapgen/types.ts';
+import { shade } from './iso.ts';
+
+export const shadeFor = shade;
 
 export const TERRAIN_COLORS: Record<number, number> = {
   [Terrain.Grass]: 0x6aa84f,
@@ -30,6 +33,8 @@ export const STOP_COLOR = 0xe3b23c;
 export const DEPOT_COLOR = 0x4d6f9c;
 export const BUS_BODY = 0xe8a23a;
 export const BUS_ROOF = 0xf5e3b5;
+export const VAN_BODY = 0xc9423a;
+export const TRUCK_STOP_COLOR = 0x5aa0c8;
 export const PREVIEW_OK = 0x4cd964;
 export const PREVIEW_BAD = 0xff3b30;
 export const HIGHLIGHT = 0xffe066;

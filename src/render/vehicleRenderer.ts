@@ -1,12 +1,13 @@
-/** Draws buses at their interpolated positions every frame. */
+/** Draws road vehicles at their interpolated positions every frame. */
 import { Container, Graphics } from 'pixi.js';
 import { dirBetween, dirInfo } from '../sim/constants.ts';
-import type { Bus } from '../sim/vehicles.ts';
+import { cargoInfo } from '../sim/cargo.ts';
+import type { Vehicle } from '../sim/types.ts';
 import type { World } from '../sim/world.ts';
 import { HEIGHT_STEP, TILE_H, TILE_W, drawBlock } from './iso.ts';
 import type { ViewRect } from './mapRenderer.ts';
 import type { MapView } from './view.ts';
-import { BUS_BODY, BUS_ROOF } from './palette.ts';
+import { BUS_BODY, BUS_ROOF, VAN_BODY, shadeFor } from './palette.ts';
 
 /** How far to the right of the centre line buses drive, in tiles. */
 const LANE_OFFSET = 0.17;
@@ -15,20 +16,34 @@ export class VehicleRenderer {
   readonly layer = new Container();
   private sprites = new Map<number, Graphics>();
 
-  /** Positions all buses. Returns true if any bus is on screen. */
+  /** Positions all vehicles. Returns true if any vehicle is on screen. */
   update(world: World, mapView: MapView, view: ViewRect): boolean {
     const alive = new Set<number>();
     let anyVisible = false;
-    for (const bus of world.buses) {
+    // Vehicles loading at the same stop are drawn side by side.
+    const slot = new Map<number, number>();
+    const loaders = new Map<number, number>();
+    for (const v of world.vehicles) {
+      if (v.loadingAt < 0) continue;
+      const n = loaders.get(v.loadingAt) ?? 0;
+      slot.set(v.id, n);
+      loaders.set(v.loadingAt, n + 1);
+    }
+    for (const bus of world.vehicles) {
       alive.add(bus.id);
       let g = this.sprites.get(bus.id);
       if (!g) {
         g = new Graphics();
-        drawBlock(g, 0, 0, 6, 3, 6, BUS_BODY, BUS_ROOF);
+        drawVehicle(g, bus);
         this.layer.addChild(g);
         this.sprites.set(bus.id, g);
       }
       const p = busPosition(world, mapView, bus);
+      const s = slot.get(bus.id) ?? 0;
+      if (s > 0) {
+        p.x += 7 * s;
+        p.y -= 3.5 * s;
+      }
       g.position.set(p.x, p.y);
       g.zIndex = p.depth;
       const visible =
@@ -57,10 +72,21 @@ export class VehicleRenderer {
 }
 
 /** Screen position of a bus: between two tile centres, shifted into the right-hand lane. */
+function drawVehicle(g: Graphics, v: Vehicle): void {
+  if (v.model === 'bus') drawBlock(g, 0, 0, 6, 3, 6, BUS_BODY, BUS_ROOF);
+  else if (v.model === 'van') drawBlock(g, 0, 0, 5, 2.5, 5, VAN_BODY, shadeFor(VAN_BODY, 1.3));
+  else {
+    // Truck: grey cab plus a load box in the colour of its cargo.
+    const cargo = Number(cargoInfo(v.cargo).color);
+    drawBlock(g, -2, 1, 6, 3, 5, cargo, shadeFor(cargo, 1.3));
+    drawBlock(g, 4, -2, 3, 1.5, 6, 0x7d8a96, 0xb7c3cc);
+  }
+}
+
 export function busPosition(
   world: World,
   mapView: MapView,
-  bus: Bus,
+  bus: Vehicle,
 ): { x: number; y: number; depth: number } {
   const { width } = world.map;
   const a = bus.path[bus.pathIndex] ?? bus.tile;
