@@ -47,7 +47,7 @@ Færdig når:
 - [x] Ruteplanlægningen er testet med forhindringer og manglende forbindelse
 - [x] 60 fps med 100 busser på medium-kort (simulationen er testet: 30 dage med 100 busser tager under 0,1 sek.)
 
-## Milepæl 3 – Økonomi og varekæder 🟨 (i gang)
+## Milepæl 3 – Økonomi og varekæder 🟨 (venter på test på iPhone)
 **Mål:** Penge tjenes og bruges, og alle fire varekæder fungerer på vej.
 
 Indhold:
@@ -57,14 +57,14 @@ Indhold:
 - To slags stop: busstoppested (passagerer og post) og læsseplads (gods).
 - Gods har ingen bestemt destination: det betales ved ethvert stop, hvor varen modtages.
 - Køretøjer holder kø bag hinanden (ingen overhaling endnu); højst 2 læsser ved et stop ad gangen.
-- Betalingen ganges med 0,1 (balancetal i src/data/economy.json).
+- Betalingen ganges med 0,3 (balancetal i src/data/economy.json; 0,1 var for lidt til at en lastbilrute kunne betale sig).
 - Betalingsformlen med tidsfaktor.
 - Simpelt økonomipanel og top-bar med penge og dato.
 
 Færdig når:
-- [ ] Betalingsformlen er testet for alle varetyper
-- [ ] Alle fire kæder kan køres fra kilde til aftager
-- [ ] En simuleret bot-spiller kan tjene penge på et standardkort (test)
+- [x] Betalingsformlen er testet for alle varetyper
+- [x] Alle fire kæder kan køres fra kilde til aftager (test)
+- [x] En simuleret bot-spiller kan tjene penge på et standardkort (test på 5 kort over 2 år)
 
 ## Milepæl 4 – Jernbane og tog ⬜
 **Mål:** Tog fragter gods og passagerer over længere afstande.
