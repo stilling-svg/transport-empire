@@ -29,7 +29,7 @@ Færdig når:
 - [x] Et large-kort genereres på under 3 sekunder
 - [x] Spillet kan åbnes på ejerens iPhone via GitHub Pages-linket
 
-## Milepæl 2 – Vejbyggeri og første bus 🟨 (venter på test på iPhone)
+## Milepæl 2 – Vejbyggeri og første bus ✅
 **Mål:** Spilleren bygger en vej og ser et køretøj køre på den.
 
 Indhold:
@@ -42,18 +42,22 @@ Indhold:
 - Busser kører gennem hinanden indtil milepæl 3 (kø og overhaling kommer der).
 
 Færdig når:
-- [ ] Vej kan bygges og rives ned med fingeren på iPhone
+- [x] Vej kan bygges og rives ned med fingeren på iPhone
 - [x] En bus kører frem og tilbage mellem to stoppesteder uden at køre forkert (test)
 - [x] Ruteplanlægningen er testet med forhindringer og manglende forbindelse
-- [ ] 60 fps med 100 busser på medium-kort (simulationen er testet: 30 dage med 100 busser tager under 0,1 sek.; billedhastigheden skal ses på iPhone)
+- [x] 60 fps med 100 busser på medium-kort (simulationen er testet: 30 dage med 100 busser tager under 0,1 sek.)
 
-## Milepæl 3 – Økonomi og varekæder ⬜
+## Milepæl 3 – Økonomi og varekæder 🟨 (i gang)
 **Mål:** Penge tjenes og bruges, og alle fire varekæder fungerer på vej.
 
 Indhold:
 - Penge, priser på anlæg og køretøjer, månedlig drift, lån og renter (GDD 5–6).
 - Industrier med produktion, opland og omdannelse (GDD 4).
 - Hauler Truck og Courier Van. Ruteordrer med "Vent på fuld last".
+- To slags stop: busstoppested (passagerer og post) og læsseplads (gods).
+- Gods har ingen bestemt destination: det betales ved ethvert stop, hvor varen modtages.
+- Køretøjer holder kø bag hinanden (ingen overhaling endnu); højst 2 læsser ved et stop ad gangen.
+- Betalingen ganges med 0,1 (balancetal i src/data/economy.json).
 - Betalingsformlen med tidsfaktor.
 - Simpelt økonomipanel og top-bar med penge og dato.
 
